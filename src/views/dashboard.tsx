@@ -28,9 +28,9 @@ export const DashboardPage: FC<DashboardProps> = (props) => {
   const busyUrl = `${origin}/c/${feed.busy_token}.ics`;
 
   return (
-    <Layout ctx={ctx} title={m.title}>
-      <div class="grid border-t border-line lg:min-h-[calc(100dvh-8rem)] lg:grid-cols-2">
-        <section class="px-5 py-10 sm:px-8 lg:py-16" aria-labelledby="calendars-title">
+    <Layout ctx={ctx} title={m.title} fill>
+      <div class="grid flex-1 border-t border-line lg:grid-cols-2">
+        <section class="px-5 py-10 sm:px-8 lg:py-12" aria-labelledby="calendars-title">
           <div class="mx-auto flex max-w-xl flex-col gap-6 lg:mr-12 lg:ml-auto">
             <div>
               <h1 id="calendars-title" class="text-3xl font-extrabold tracking-tight">
@@ -109,7 +109,7 @@ export const DashboardPage: FC<DashboardProps> = (props) => {
           </div>
         </section>
 
-        <section class="bg-panel px-5 py-10 sm:px-8 lg:py-16" aria-labelledby="links-title">
+        <section class="bg-panel px-5 py-10 sm:px-8 lg:py-12" aria-labelledby="links-title">
           <div class="mx-auto flex max-w-xl flex-col gap-8 lg:mr-auto lg:ml-12">
             <div>
               <h2 id="links-title" class="text-3xl font-extrabold tracking-tight">

@@ -15,7 +15,8 @@ export interface PageContext {
 
 const LANGUAGE_NAMES: Record<Locale, string> = { it: "Italiano", en: "English" };
 
-export const Layout: FC<{ ctx: PageContext; title?: string; children: Child }> = ({ ctx, title, children }) => {
+/** `fill`: the page content stretches to fill the height between header and footer. */
+export const Layout: FC<{ ctx: PageContext; title?: string; fill?: boolean; children: Child }> = ({ ctx, title, fill, children }) => {
   const m = t(ctx.locale);
   return (
     <html lang={ctx.locale}>
@@ -31,12 +32,12 @@ export const Layout: FC<{ ctx: PageContext; title?: string; children: Child }> =
         <script src={`/app.js?v=${ASSET_VERSION}`} defer />
       </head>
       <body class="flex min-h-dvh flex-col font-sans">
-        <header class="flex items-center justify-between gap-4 px-5 py-4 sm:px-8">
-          <a href={ctx.signedIn ? "/dashboard" : "/"} class="group flex items-baseline text-xl font-extrabold tracking-tight" aria-label="Calendario">
+        <header class="flex items-center justify-between gap-3 px-5 py-4 sm:px-8">
+          <a href={ctx.signedIn ? "/dashboard" : "/"} class="group flex shrink-0 items-baseline text-xl font-extrabold tracking-tight" aria-label="Calendario">
             <span>calendario</span>
-            <span class="font-medium text-ink-soft transition-colors group-hover:text-ink">.condividi.link</span>
+            <span class={`font-medium text-ink-soft transition-colors group-hover:text-ink ${ctx.signedIn ? "hidden sm:inline" : ""}`}>.condividi.link</span>
           </a>
-          <nav class="flex items-center gap-1 text-sm font-semibold sm:gap-3" aria-label="Menu">
+          <nav class="flex items-center gap-0 text-sm font-semibold sm:gap-3" aria-label="Menu">
             {ctx.signedIn ? (
               <>
                 {ctx.email && <span class="mr-2 hidden font-medium text-ink-soft md:inline">{ctx.email}</span>}
@@ -61,8 +62,8 @@ export const Layout: FC<{ ctx: PageContext; title?: string; children: Child }> =
             )}
           </nav>
         </header>
-        <main class="flex-1">{children}</main>
-        <footer class="flex flex-wrap items-center justify-between gap-4 border-t border-line px-5 py-6 text-sm text-ink-soft sm:px-8">
+        <main class={fill ? "flex flex-1 flex-col" : "flex-1"}>{children}</main>
+        <footer class="flex flex-wrap items-center justify-between gap-4 border-t border-line px-5 py-5 text-sm text-ink-soft sm:px-8">
           <a class="link font-medium" href={REPO_URL}>
             {m.landing.source}
           </a>
