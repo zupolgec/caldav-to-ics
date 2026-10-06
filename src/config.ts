@@ -42,7 +42,7 @@ export function readSources(env: Env): Source[] {
   try {
     parsed = JSON.parse(env.SOURCES ?? "");
   } catch {
-    throw new ConfigError('SOURCES is not valid JSON. Expected an array like [{"type":"ics","url":"https://..."}].');
+    throw new ConfigError('SOURCES is not valid JSON. Expected an array like [{"type":"ics","url":"..."}].');
   }
   if (!Array.isArray(parsed) || parsed.length === 0) {
     throw new ConfigError("SOURCES must be a non-empty JSON array of sources.");

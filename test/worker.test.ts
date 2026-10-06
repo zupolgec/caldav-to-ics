@@ -210,6 +210,22 @@ describe("/health", () => {
     expect(health.error).toMatch(/SOURCES\[0\].*username/);
   });
 
+  it("shows the whole error message when SOURCES is not JSON", async () => {
+    const broken = { ...env, SOURCES: "not json" };
+    await cron(NOW, broken);
+    const state = (await env.FEEDS.get("state", "json")) as { error: string };
+    expect(state.error).toBe('SOURCES is not valid JSON. Expected an array like [{"type":"ics","url":"..."}].');
+  });
+
+  it("never exposes source URLs in errors", async () => {
+    network.use(http.get(ICS_URL, () => Response.error()));
+    const e = { ...env, SOURCES: JSON.stringify([{ type: "ics", url: ICS_URL }]) };
+    await cron(NOW, e);
+    const health = (await (await get("/health", undefined, e)).json()) as { error: string };
+    expect(health.error).toMatch(/^source 1 \(ics\): /);
+    expect(health.error).not.toContain("ics.test");
+  });
+
   it("reports that no refresh has happened yet", async () => {
     const health = await (await get("/health")).json();
     expect(health).toEqual({ ok: false, lastAttempt: null, lastSuccess: null, events: 0 });

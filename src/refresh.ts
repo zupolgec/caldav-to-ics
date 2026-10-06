@@ -73,5 +73,5 @@ async function stored(body: string, previous: StoredFeed | undefined, now: numbe
 /** Error text safe to expose: URLs are removed in case a runtime error message includes one. */
 function describe(error: unknown): string {
   const message = error instanceof Error ? error.message : String(error);
-  return message.replace(/https?:\/\/\S+/g, "<url>");
+  return message.replace(/https?:\/\/[^\s"'<>]+/g, "<url>");
 }
