@@ -12,6 +12,7 @@ Data: 6 ottobre 2026
 - Le espressioni cron stanno in `wrangler.jsonc` e non si leggono da env. Il cron gira ogni minuto (`* * * * *`) e aggiorna solo quando il minuto epoch è multiplo di `REFRESH_MINUTES`.
 - È una decisione senza stato: non serve leggere la data dell'ultimo aggiornamento da KV, che è eventualmente consistente. Se un'esecuzione salta, si aspetta l'intervallo successivo.
 - Limite free: 10 ms di CPU per invocazione (l'attesa di rete non conta) e 5 cron per account.
+- Misurato dal vivo il 6 ottobre 2026 (2 eventi): refresh a freddo 13 ms di CPU, a caldo 8 ms, circa 1,1 s di attesa di rete; richieste HTTP 0–1 ms. Il costo è quasi tutto fisso. Sul piano free i calendari grandi possono sforare, su Workers Paid (30 s) no.
 
 ## Parsing
 - Parser iCalendar scritto a mano (`src/ics.ts`, circa 150 righe): conserva ogni proprietà così com'è, così il feed completo riproduce fedelmente la sorgente, ed è leggero in CPU.

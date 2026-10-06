@@ -17,7 +17,7 @@ Any calendar app can subscribe to these URLs: Google Calendar, Apple Calendar, O
 - The feeds include the last `PAST_DAYS` days (default 90) and everything in the future. A recurring event is included if any of its occurrences falls in that range.
 - Events from all sources are merged into one calendar. Timezones are deduplicated, and `UID`, `RECURRENCE-ID`, `RRULE` and `EXDATE` are kept.
 
-It runs on the Workers free plan.
+It runs on the Workers free plan for small calendars; see [Free plan limits](#free-plan-limits).
 
 ## Setup
 
@@ -137,6 +137,7 @@ The full feed contains every event in the date range as the source provides it. 
 
 - Workers KV allows 1,000 writes a day on the free plan. Each refresh writes once, so a 5-minute interval uses 288 writes a day. This is why `REFRESH_MINUTES` can't go below 2.
 - The Cron Trigger runs every minute and does nothing until `REFRESH_MINUTES` have passed. It uses one of the 5 Cron Triggers a free account gets.
+- The free plan allows 10 ms of CPU per run (waiting for the network doesn't count). A refresh of a small calendar measured about 8 ms, so large calendars may go over it. If a refresh is stopped for that, the previous feeds stay online. The Workers Paid plan allows 30 seconds.
 
 ## Development
 
