@@ -192,7 +192,7 @@ const LinkField: FC<{ id: string; label: string; hint: string; url: string; name
       </p>
       <div class="flex gap-2">
         <input id={id} type="text" readonly value={url} aria-describedby={`${id}-hint`} class="field min-w-0 text-sm tabular-nums" data-select-on-focus />
-        <button type="button" class="btn" data-copy={id} data-copied-label={m.copied}>
+        <button type="button" class="btn" data-copy={id} data-copied-label={m.copied} aria-live="polite">
           {m.copy}
         </button>
       </div>

@@ -123,6 +123,58 @@ describe("busy feed", () => {
     expect(events(busy).filter((e) => e.hasProperty("recurrence-id"))).toHaveLength(1);
   });
 
+  it("publishes a busy occurrence of a skipped series as a standalone event", async () => {
+    const declinedSeries = [
+      "BEGIN:VCALENDAR",
+      "VERSION:2.0",
+      "BEGIN:VEVENT",
+      "UID:series@example.com",
+      "DTSTAMP:20261001T080000Z",
+      "DTSTART:20261012T090000Z",
+      "DTEND:20261012T100000Z",
+      "RRULE:FREQ=WEEKLY",
+      "ATTENDEE;PARTSTAT=DECLINED:mailto:me@example.com",
+      "END:VEVENT",
+      "BEGIN:VEVENT",
+      "UID:series@example.com",
+      "DTSTAMP:20261001T080000Z",
+      "RECURRENCE-ID:20261019T090000Z",
+      "DTSTART:20261019T090000Z",
+      "DTEND:20261019T100000Z",
+      "ATTENDEE;PARTSTAT=ACCEPTED:mailto:me@example.com",
+      "END:VEVENT",
+      "END:VCALENDAR",
+      "",
+    ].join("\r\n");
+    const { busy } = await buildFeeds([declinedSeries], options);
+    const list = events(busy);
+    expect(list).toHaveLength(1);
+    expect(list[0].hasProperty("recurrence-id")).toBe(false);
+    expect(list[0].getFirstPropertyValue("dtstart")!.toString()).toBe("2026-10-19T09:00:00Z");
+  });
+
+  it("hashes UIDs differently for every user", async () => {
+    const a = await buildFeeds([SOURCE_A], { ...options, uidSalt: "user-a" });
+    const b = await buildFeeds([SOURCE_A], { ...options, uidSalt: "user-b" });
+    expect(uids(a.busy)).not.toEqual(uids(b.busy));
+  });
+
+  it("includes only the timezones its events use", async () => {
+    const { busy, full } = await buildFeeds([SOURCE_A, SOURCE_B], options);
+    const tzids = (ics: string) => new ICAL.Component(ICAL.parse(ics)).getAllSubcomponents("vtimezone").map((tz) => tz.getFirstPropertyValue("tzid"));
+    expect(tzids(full).sort()).toEqual(["America/New_York", "Europe/Rome"]);
+    expect(tzids(busy).sort()).toEqual(["America/New_York", "Europe/Rome"]);
+    const romeOnly = await buildFeeds([SOURCE_A], options);
+    expect(tzids(romeOnly.busy)).toEqual(["Europe/Rome"]);
+    const utcOnly = await buildFeeds([SOURCE_A.replace(/;TZID=Europe\/Rome:(\d{8}T\d{6})/g, ":$1Z")], options);
+    expect(tzids(utcOnly.busy)).toEqual([]);
+  });
+
+  it("keeps line breaks in the busy title from creating new lines", async () => {
+    const { busy } = await buildFeeds([SOURCE_A], { ...options, busyTitle: "Busy\rX-INJECTED:1" });
+    expect(busy).not.toMatch(/^X-INJECTED/m);
+  });
+
   it("keeps declined invitations when no owner address is configured", async () => {
     const { busy } = await buildFeeds([SOURCE_A, SOURCE_B], { ...options, ownerEmails: [] });
     expect(uids(busy)).toHaveLength(6);

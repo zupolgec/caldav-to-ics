@@ -81,8 +81,12 @@ describe("landing page and language", () => {
   });
 
   it("does not redirect the language switcher to other sites", async () => {
-    const response = await call(env, "/lang/en?next=https://evil.example/");
-    expect(response.headers.get("Location")).toBe("/");
+    for (const next of ["https://evil.example/", "//evil.example/", "/%09/evil.example", "/\\evil.example"]) {
+      const response = await call(env, `/lang/en?next=${encodeURIComponent(next)}`);
+      const target = new URL(response.headers.get("Location")!, "https://cal.test");
+      expect(target.origin, next).toBe("https://cal.test");
+    }
+    expect((await call(env, "/lang/en?next=%2Fsettings%3Fx%3D1")).headers.get("Location")).toBe("/settings?x=1");
   });
 });
 
@@ -251,6 +255,51 @@ describe("calendars", () => {
     expect(text).toContain("Dentist");
   });
 
+  it("refuses calendars larger than 20 MB, even without a declared size", async () => {
+    const big = `https://ics.example.org/big.ics`;
+    network.use(
+      http.get(big, () => {
+        const chunk = new TextEncoder().encode("X".repeat(1024 * 1024));
+        let sent = 0;
+        const stream = new ReadableStream({
+          pull(controller) {
+            if (sent++ === 0) controller.enqueue(new TextEncoder().encode("BEGIN:VCALENDAR\r\n"));
+            if (sent > 25) controller.close();
+            else controller.enqueue(chunk);
+          },
+        });
+        return new HttpResponse(stream, { headers: { "Content-Type": "text/calendar" } });
+      }),
+    );
+    const cookie = await signIn(env, "me@example.com");
+    const response = await call(env, "/calendars", { form: { url: big }, cookie });
+    expect(response.status).toBe(422);
+    expect(await response.text()).toContain("20 MB");
+  });
+
+  it("never sends CalDAV passwords to another server", async () => {
+    let leaked = false;
+    network.use(
+      http.all("https://dav.example.net/root/", ({ request }) => {
+        if (request.method === "REPORT") return new HttpResponse(null, { status: 405 });
+        if (request.method === "GET") return new HttpResponse("<html/>", { headers: { "Content-Type": "text/html" } });
+        return new HttpResponse(
+          `<?xml version="1.0"?><d:multistatus xmlns:d="DAV:" xmlns:c="urn:ietf:params:xml:ns:caldav"><d:response><d:href>/root/</d:href><d:propstat><d:prop><c:calendar-home-set><d:href>https://attacker.example/home/</d:href></c:calendar-home-set></d:prop></d:propstat></d:response></d:multistatus>`,
+          { status: 207, headers: { "Content-Type": "application/xml" } },
+        );
+      }),
+      http.all("https://attacker.example/*", ({ request }) => {
+        if (request.headers.get("Authorization")) leaked = true;
+        return new HttpResponse(null, { status: 404 });
+      }),
+      http.get("https://dav.example.net/redirect.ics", () => new HttpResponse(null, { status: 302, headers: { Location: "https://attacker.example/cal.ics" } })),
+    );
+    const cookie = await signIn(env, "me@example.com");
+    await call(env, "/calendars", { form: { url: "https://dav.example.net/root/", username: "me", password: "secret" }, cookie });
+    await call(env, "/calendars", { form: { url: "https://dav.example.net/redirect.ics", username: "me", password: "secret" }, cookie });
+    expect(leaked).toBe(false);
+  });
+
   it("does not let users touch other users' calendars", async () => {
     serveCalendars();
     const alice = await signIn(env, "alice@example.com");
@@ -325,6 +374,32 @@ describe("feed links", () => {
 });
 
 describe("background refresh", () => {
+  it("rebuilds a feed whose stored copy doesn't match its calendars", async () => {
+    serveCalendars();
+    const cookie = await signIn(env, "me@example.com");
+    await call(env, "/calendars", { form: { url: WORK_URL }, cookie });
+    const { full } = await feedUrls(cookie);
+    // A slower, older refresh overwrote the stored feed after the latest one.
+    const userId = (await baseEnv.DB.prepare("SELECT id FROM users").first<{ id: string }>())!.id;
+    await baseEnv.FEEDS.put(`feed:${userId}:full`, "BEGIN:VCALENDAR\r\nEND:VCALENDAR\r\n", { metadata: { etag: '"stale"', modified: NOW, input: "old" } });
+    vi.setSystemTime(NOW + 11 * 60_000);
+    await runQueue(env, [{ userId }]);
+    const response = await getFeed(full);
+    expect(await response.text()).toContain("Secret project kickoff");
+    expect(response.headers.get("ETag")).not.toBe('"stale"');
+  });
+
+  it("removes expired sign-in links and sessions", async () => {
+    await signIn(env, "me@example.com");
+    await call(env, "/login", { form: { email: "late@example.com" } });
+    vi.setSystemTime(NOW + 31 * 86_400_000);
+    await runCron(env, NOW + 31 * 86_400_000);
+    for (const table of ["login_tokens", "sessions"]) {
+      const row = await baseEnv.DB.prepare(`SELECT COUNT(*) AS n FROM ${table}`).first<{ n: number }>();
+      expect(row?.n, table).toBe(0);
+    }
+  });
+
   it("queues the feeds that are due and refreshes them", async () => {
     serveCalendars();
     const cookie = await signIn(env, "me@example.com");

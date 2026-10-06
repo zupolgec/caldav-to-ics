@@ -212,6 +212,12 @@ const it = {
     save: "Salva",
     saved: "Salvato.",
     invalid: "Controlla i campi evidenziati.",
+    fieldErrors: {
+      calendar_name: "Scrivi un nome, al massimo 80 caratteri.",
+      busy_title: "Scrivi un titolo, al massimo 40 caratteri.",
+      past_days: "Scrivi un numero di giorni tra 0 e 3650.",
+      extra_emails: "Uno degli indirizzi non sembra valido.",
+    },
     linksSection: "Sostituisci i link",
     linksText:
       "Crea un nuovo link se quello vecchio è finito nelle mani sbagliate. Il vecchio smette subito di funzionare: chi era abbonato dovrà usare quello nuovo.",
@@ -447,6 +453,12 @@ const en: Messages = {
     save: "Save",
     saved: "Saved.",
     invalid: "Check the highlighted fields.",
+    fieldErrors: {
+      calendar_name: "Enter a name, up to 80 characters.",
+      busy_title: "Enter a title, up to 40 characters.",
+      past_days: "Enter a number of days between 0 and 3650.",
+      extra_emails: "One of the addresses doesn't look valid.",
+    },
     linksSection: "Replace your links",
     linksText:
       "Create a new link if the old one ended up in the wrong hands. The old one stops working at once: subscribers will need the new one.",

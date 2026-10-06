@@ -3,7 +3,7 @@ import { type Locale, LOCALES, t } from "../lib/i18n";
 
 export const REPO_URL = "https://github.com/zupolgec/caldav-to-ics";
 // Bump when public/app.css or public/app.js change, so browsers fetch the new files.
-const ASSET_VERSION = "2";
+const ASSET_VERSION = "3";
 
 export interface PageContext {
   locale: Locale;

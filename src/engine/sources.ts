@@ -19,7 +19,9 @@ const MAX_BYTES = 20 * 1024 * 1024;
 
 /** Downloads a source and returns its calendar data as one or more iCalendar documents. */
 export async function fetchSource(source: Source, windowStart: number): Promise<string[]> {
-  return source.type === "caldav" ? fetchCaldav(source, windowStart) : [await fetchIcs(source)];
+  const texts = source.type === "caldav" ? await fetchCaldav(source, windowStart) : [await fetchIcs(source)];
+  if (texts.reduce((n, text) => n + text.length, 0) > MAX_BYTES) throw new SourceError("too_large");
+  return texts;
 }
 
 async function fetchIcs(source: Extract<Source, { type: "ics" }>): Promise<string> {
@@ -32,12 +34,25 @@ async function fetchIcs(source: Extract<Source, { type: "ics" }>): Promise<strin
   return text;
 }
 
-async function send(url: string, init: RequestInit): Promise<Response> {
+/**
+ * Fetches with a timeout. Requests carrying a password follow redirects only on the same
+ * server, so credentials never reach another host.
+ */
+async function send(url: string, init: RequestInit, hops = 0): Promise<Response> {
+  const withCredentials = new Headers(init.headers).has("Authorization");
+  let response: Response;
   try {
-    return await fetch(url, { ...init, signal: AbortSignal.timeout(TIMEOUT_MS) });
+    response = await fetch(url, { ...init, redirect: withCredentials ? "manual" : "follow", signal: AbortSignal.timeout(TIMEOUT_MS) });
   } catch (error) {
     throw new SourceError(error instanceof Error && error.name === "TimeoutError" ? "timeout" : "network");
   }
+  const location = response.headers.get("Location");
+  if (withCredentials && response.status >= 300 && response.status < 400 && location) {
+    const next = new URL(location, url);
+    if (next.origin !== new URL(url).origin || hops >= 5) throw new SourceError("http", response.status);
+    return send(next.href, init, hops + 1);
+  }
+  return response;
 }
 
 function checkStatus(response: Response): void {
@@ -47,11 +62,30 @@ function checkStatus(response: Response): void {
   throw new SourceError("http", response.status);
 }
 
+/** Reads a response body, giving up as soon as it grows past MAX_BYTES. */
 async function readText(response: Response): Promise<string> {
   if (Number(response.headers.get("Content-Length") ?? 0) > MAX_BYTES) throw new SourceError("too_large");
-  const text = await response.text();
-  if (text.length > MAX_BYTES) throw new SourceError("too_large");
-  return text;
+  if (!response.body) return "";
+  const reader = response.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let size = 0;
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    size += value.byteLength;
+    if (size > MAX_BYTES) {
+      await reader.cancel();
+      throw new SourceError("too_large");
+    }
+    chunks.push(value);
+  }
+  const bytes = new Uint8Array(size);
+  let offset = 0;
+  for (const chunk of chunks) {
+    bytes.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+  return new TextDecoder().decode(bytes);
 }
 
 type CaldavSource = Extract<Source, { type: "caldav" }>;
@@ -124,6 +158,12 @@ async function discoverCalendars(source: CaldavSource, url: string, hops: number
   if (response.status !== 207) throw new SourceError("no_calendars");
   const xml = await readText(response);
 
+  // Links to other servers are ignored: the password must only ever go to this one.
+  const origin = new URL(url).origin;
+  const sameServer = (href: string) => {
+    const target = new URL(xmlText(href).trim(), url);
+    return target.origin === origin ? target.href : undefined;
+  };
   const calendars: string[] = [];
   let next: string | undefined;
   for (const res of elements(xml, "response")) {
@@ -132,11 +172,12 @@ async function discoverCalendars(source: CaldavSource, url: string, hops: number
     const resourcetype = elements(res, "resourcetype")[0] ?? "";
     const components = elements(res, "supported-calendar-component-set")[0];
     if (/<(?:[\w-]+:)?calendar[\s/>]/.test(resourcetype) && (!components || /name=["']VEVENT["']/i.test(components))) {
-      calendars.push(new URL(xmlText(href).trim(), url).href);
+      const calendar = sameServer(href);
+      if (calendar) calendars.push(calendar);
     }
     const link = elements(res, "calendar-home-set")[0] ?? elements(res, "current-user-principal")[0];
     const linkHref = link && elements(link, "href")[0];
-    if (linkHref && !next) next = new URL(xmlText(linkHref).trim(), url).href;
+    if (linkHref && !next) next = sameServer(linkHref);
   }
   if (calendars.length > 0) return calendars;
   return next && next !== url ? discoverCalendars(source, next, hops + 1) : [];

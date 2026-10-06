@@ -29,12 +29,17 @@ const Section: FC<{ title: string; children: Child }> = ({ title, children }) =>
   </section>
 );
 
-const Field: FC<{ id: keyof SettingsValues; label: string; hint?: string; invalid?: boolean; children: Child }> = ({ id, label, hint, invalid, children }) => (
+const Field: FC<{ id: keyof SettingsValues; label: string; hint?: string; error?: string; children: Child }> = ({ id, label, hint, error, children }) => (
   <div class="flex flex-col gap-1">
-    <label for={id} class={`text-sm font-semibold ${invalid ? "text-danger" : ""}`}>
+    <label for={id} class={`text-sm font-semibold ${error ? "text-danger" : ""}`}>
       {label}
     </label>
     {children}
+    {error && (
+      <p id={`${id}-error`} class="text-sm font-medium text-danger">
+        {error}
+      </p>
+    )}
     {hint && (
       <p id={`${id}-hint`} class="text-sm leading-relaxed text-ink-soft">
         {hint}
@@ -65,22 +70,31 @@ export const SettingsPage: FC<SettingsProps> = ({ ctx, email, feed, values, erro
         <Section title={m.calendarSection}>
           {hasErrors && <Flash kind="error">{m.invalid}</Flash>}
           <form method="post" action="/settings" class="flex flex-col gap-5">
-            <Field id="calendar_name" label={m.calendarName} hint={m.calendarNameHint} invalid={errors.calendar_name}>
+            <Field id="calendar_name" label={m.calendarName} hint={m.calendarNameHint} error={errors.calendar_name && m.fieldErrors.calendar_name}>
               <input
                 id="calendar_name"
                 name="calendar_name"
                 required
                 maxlength={80}
                 value={v.calendar_name}
-                aria-describedby="calendar_name-hint"
+                aria-describedby={errors.calendar_name ? "calendar_name-error calendar_name-hint" : "calendar_name-hint"}
                 aria-invalid={errors.calendar_name ? "true" : undefined}
                 class="field"
               />
             </Field>
-            <Field id="busy_title" label={m.busyTitle} invalid={errors.busy_title}>
-              <input id="busy_title" name="busy_title" required maxlength={40} value={v.busy_title} aria-invalid={errors.busy_title ? "true" : undefined} class="field" />
+            <Field id="busy_title" label={m.busyTitle} error={errors.busy_title && m.fieldErrors.busy_title}>
+              <input
+                id="busy_title"
+                name="busy_title"
+                required
+                maxlength={40}
+                value={v.busy_title}
+                aria-describedby={errors.busy_title ? "busy_title-error" : undefined}
+                aria-invalid={errors.busy_title ? "true" : undefined}
+                class="field"
+              />
             </Field>
-            <Field id="past_days" label={m.pastDays} hint={m.pastDaysHint} invalid={errors.past_days}>
+            <Field id="past_days" label={m.pastDays} hint={m.pastDaysHint} error={errors.past_days && m.fieldErrors.past_days}>
               <input
                 id="past_days"
                 name="past_days"
@@ -90,19 +104,19 @@ export const SettingsPage: FC<SettingsProps> = ({ ctx, email, feed, values, erro
                 max={3650}
                 required
                 value={v.past_days}
-                aria-describedby="past_days-hint"
+                aria-describedby={errors.past_days ? "past_days-error past_days-hint" : "past_days-hint"}
                 aria-invalid={errors.past_days ? "true" : undefined}
                 class="field max-w-32 tabular-nums"
               />
             </Field>
-            <Field id="extra_emails" label={m.extraEmails} hint={m.extraEmailsHint} invalid={errors.extra_emails}>
+            <Field id="extra_emails" label={m.extraEmails} hint={m.extraEmailsHint} error={errors.extra_emails && m.fieldErrors.extra_emails}>
               <input
                 id="extra_emails"
                 name="extra_emails"
                 type="text"
                 autocomplete="off"
                 value={v.extra_emails}
-                aria-describedby="extra_emails-hint"
+                aria-describedby={errors.extra_emails ? "extra_emails-error extra_emails-hint" : "extra_emails-hint"}
                 aria-invalid={errors.extra_emails ? "true" : undefined}
                 class="field"
               />

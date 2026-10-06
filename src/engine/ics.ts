@@ -95,7 +95,7 @@ export function prop(name: string, value: string, params = ""): Property {
 
 /** Escapes a TEXT value (RFC 5545 §3.3.11). */
 export function escapeText(text: string): string {
-  return text.replace(/\\/g, "\\\\").replace(/;/g, "\\;").replace(/,/g, "\\,").replace(/\r?\n/g, "\\n");
+  return text.replace(/\\/g, "\\\\").replace(/;/g, "\\;").replace(/,/g, "\\,").replace(/\r\n|\r|\n/g, "\\n");
 }
 
 /** Serializes components with CRLF line endings and lines folded at 75 octets. */

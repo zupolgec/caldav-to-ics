@@ -8,7 +8,7 @@ import { SourceError } from "./engine/sources";
 import { decryptJson, encryptJson, randomToken, sha256Hex } from "./lib/crypto";
 import { sendLoginEmail } from "./lib/email";
 import { type Locale, isLocale, negotiateLocale, t } from "./lib/i18n";
-import { type RefreshMessage, contentHash, countEvents, enqueueDueFeeds, refreshInterval, refreshUser } from "./refresh";
+import { type FeedMeta, type RefreshMessage, cleanUp, contentHash, countEvents, enqueueDueFeeds, refreshInterval, refreshUser } from "./refresh";
 import { InvalidLinkPage, LoginPage, NotFoundPage, SentPage, VerifyPage } from "./views/auth";
 import { DashboardPage } from "./views/dashboard";
 import { LandingPage } from "./views/landing";
@@ -30,25 +30,24 @@ const app = new Hono<AppEnv>();
 app.on(["GET", "HEAD"], "/c/:file", async (c) => {
   const match = /^([A-Za-z0-9]{16,128})\.ics$/.exec(c.req.param("file"));
   if (!match) return c.text("Not found", 404);
-  let feed = await findFeedByToken(c.env.DB, match[1]);
+  const feed = await findFeedByToken(c.env.DB, match[1]);
   if (!feed) return c.text("Not found", 404);
   const kind = feed.full_token === match[1] ? "full" : "busy";
 
-  let body: string | null = null;
-  if (feed[`${kind}_etag`]) body = await c.env.FEEDS.get(feedKey(feed.user_id, kind));
-  if (body === null) {
-    // Never built yet: build it now rather than serve nothing.
+  let stored = await c.env.FEEDS.getWithMetadata<FeedMeta>(feedKey(feed.user_id, kind));
+  if (stored.value === null) {
+    // Built feeds can take up to a minute to reach every location; only build here if it never was.
+    if (feed.full_etag) return c.text("Calendar temporarily unavailable", 503, { "Retry-After": "60" });
     await refreshUser(c.env, feed.user_id, Date.now(), { force: true });
-    feed = (await getFeed(c.env.DB, feed.user_id))!;
-    body = await c.env.FEEDS.get(feedKey(feed.user_id, kind));
-    if (body === null) return c.text("Calendar temporarily unavailable", 503, { "Retry-After": "60" });
+    stored = await c.env.FEEDS.getWithMetadata<FeedMeta>(feedKey(feed.user_id, kind));
+    if (stored.value === null) return c.text("Calendar temporarily unavailable", 503, { "Retry-After": "60" });
   }
-
-  const etag = feed[`${kind}_etag`]!;
+  const body = stored.value;
+  const etag = stored.metadata?.etag ?? `"${(await sha256Hex(body)).slice(0, 32)}"`;
   const headers = {
     "Content-Type": "text/calendar; charset=utf-8",
     ETag: etag,
-    "Last-Modified": new Date(feed.modified_at ?? Date.now()).toUTCString(),
+    "Last-Modified": new Date(stored.metadata?.modified ?? feed.modified_at ?? Date.now()).toUTCString(),
     "Cache-Control": `private, max-age=${Math.round(refreshInterval(c.env) / 2000)}`,
     "X-Robots-Tag": "noindex",
   };
@@ -117,8 +116,13 @@ app.get("/", (c) => {
 
 app.get("/lang/:code", async (c) => {
   const code = c.req.param("code");
-  const next = c.req.query("next") ?? "/";
-  const target = next.startsWith("/") && !next.startsWith("//") && !next.startsWith("/\\") ? next : "/";
+  // Only ever go back to a page of this site.
+  const origin = new URL(c.req.url).origin;
+  let target = "/";
+  if (URL.canParse(c.req.query("next") ?? "", origin)) {
+    const next = new URL(c.req.query("next")!, origin);
+    if (next.origin === origin) target = next.pathname + next.search;
+  }
   if (isLocale(code)) {
     setCookie(c, "lang", code, { path: "/", maxAge: 365 * 86_400, sameSite: "Lax", secure: true });
     const user = c.get("user");
@@ -195,7 +199,16 @@ app.post("/login/verify", async (c) => {
     : null;
   if (!row) return c.html(<InvalidLinkPage ctx={pageContext(c)} />, 400);
 
-  const user = (await findUserByEmail(c.env.DB, row.email)) ?? (await createUser(c.env.DB, row.email, isLocale(row.locale) ? row.locale : "en", now));
+  let user = await findUserByEmail(c.env.DB, row.email);
+  if (!user) {
+    try {
+      user = await createUser(c.env.DB, row.email, isLocale(row.locale) ? row.locale : "en", now);
+    } catch (error) {
+      // Two links for a new address used at the same moment: the other one created the account.
+      user = await findUserByEmail(c.env.DB, row.email);
+      if (!user) throw error;
+    }
+  }
   const sid = randomToken(43);
   await c.env.DB.prepare("INSERT INTO sessions (id_hash, user_id, created_at, expires_at) VALUES (?, ?, ?, ?)")
     .bind(await sha256Hex(sid), user.id, now, now + SESSION_DAYS * 86_400_000)
@@ -374,6 +387,7 @@ export default {
 
   async scheduled(controller, env, _ctx): Promise<void> {
     await enqueueDueFeeds(env, controller.scheduledTime);
+    await cleanUp(env, controller.scheduledTime);
   },
 
   async queue(batch, env, _ctx): Promise<void> {

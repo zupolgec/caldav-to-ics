@@ -8,6 +8,8 @@ export interface FeedOptions {
   busyTitle: string;
   /** Lower-cased addresses of the calendar owner, used to spot declined invitations. */
   ownerEmails: string[];
+  /** Mixed into the hashed UIDs of the busy feed, so two people's feeds can't be matched up. */
+  uidSalt?: string;
 }
 
 export interface Feeds {
@@ -55,9 +57,11 @@ export async function buildFeeds(sources: string[], options: FeedOptions): Promi
   const busyEvents: Component[] = [];
   for (const { uid, events } of kept) busyEvents.push(...(await busySeries(uid, events, options)));
 
+  // The busy feed only carries the timezones its events use.
+  const busyTzids = new Set(busyEvents.flatMap((e) => e.props.map((p) => getParam(p, "TZID")).filter((tz): tz is string => !!tz)));
   return {
     full: calendar(options.calendarName, [...timezones.values()], fullEvents),
-    busy: calendar(options.calendarName, [...timezones.values()], busyEvents),
+    busy: calendar(options.calendarName, [...timezones.entries()].filter(([tzid]) => busyTzids.has(tzid)).map(([, tz]) => tz), busyEvents),
     eventCount: kept.length,
   };
 }
@@ -79,7 +83,8 @@ function calendar(name: string, timezones: Component[], events: Component[]): st
 }
 
 async function busySeries(uid: string, events: Component[], options: FeedOptions): Promise<Component[]> {
-  const hashedUid = `${await sha256(uid)}@caldav-to-ics`;
+  const salt = options.uidSalt ?? "";
+  const hashedUid = `${await sha256(`${salt}\n${uid}`)}@calendario`;
   const master = events.find((e) => !getProp(e, "RECURRENCE-ID"));
   const masterBusy = master && isBusy(master, options.ownerEmails);
   const result: Component[] = [];
@@ -88,8 +93,14 @@ async function busySeries(uid: string, events: Component[], options: FeedOptions
   for (const event of events) {
     const recurrenceId = getProp(event, "RECURRENCE-ID");
     if (event === master) continue;
-    if (isBusy(event, options.ownerEmails)) {
+    if (isBusy(event, options.ownerEmails) && masterBusy) {
       result.push(sanitize(event, hashedUid, options.busyTitle));
+    } else if (isBusy(event, options.ownerEmails)) {
+      // Its series isn't published: without it, calendar apps would drop the occurrence.
+      const ownUid = `${await sha256(`${salt}\n${uid}\n${recurrenceId?.value ?? ""}`)}@calendario`;
+      const standalone = sanitize(event, ownUid, options.busyTitle);
+      standalone.props = standalone.props.filter((p) => p.name !== "RECURRENCE-ID");
+      result.push(standalone);
     } else if (masterBusy && recurrenceId) {
       // A skipped occurrence of a busy series: remove it from the series instead.
       const params = ["TZID", "VALUE"]

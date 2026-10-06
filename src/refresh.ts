@@ -14,6 +14,22 @@ export interface RefreshMessage {
   userId: string;
 }
 
+/** Stored with each feed body in KV, so the body and its ETag always travel together. */
+export interface FeedMeta {
+  etag: string;
+  modified: number;
+  /** Hash of the calendars and settings the body was built from. */
+  input: string;
+}
+
+/** Deletes sign-in links older than a day (they're kept that long to count requests) and expired sessions. */
+export async function cleanUp(env: Env, now: number): Promise<void> {
+  await env.DB.batch([
+    env.DB.prepare("DELETE FROM login_tokens WHERE created_at < ?").bind(now - 86_400_000),
+    env.DB.prepare("DELETE FROM sessions WHERE expires_at < ?").bind(now),
+  ]);
+}
+
 /** Queues a refresh for every feed that is due and has at least one calendar. */
 export async function enqueueDueFeeds(env: Env, now: number): Promise<number> {
   const { results } = await env.DB.prepare(
@@ -57,7 +73,10 @@ export async function refreshUser(env: Env, userId: string, now: number, { force
   const inputHash = await sha256Hex(JSON.stringify([loaded.map((l) => l.hash), settings, day]));
 
   const next = now + refreshInterval(env);
-  if (!force && inputHash === feed.input_hash && feed.full_etag) {
+  // Skip the rebuild only if the stored body was built from these same inputs: a slower,
+  // older refresh may have overwritten it after a newer one.
+  const stored = await env.FEEDS.getWithMetadata<FeedMeta>(feedKey(userId, "full"));
+  if (!force && inputHash === feed.input_hash && stored.metadata?.input === inputHash) {
     await env.DB.prepare("UPDATE feeds SET last_attempt_at = ?1, last_success_at = ?1, next_refresh_at = ?2 WHERE user_id = ?3")
       .bind(now, next, userId)
       .run();
@@ -66,15 +85,16 @@ export async function refreshUser(env: Env, userId: string, now: number, { force
 
   const feeds = await buildFeeds(
     loaded.flatMap((l) => l.texts),
-    { now, pastDays: feed.past_days, calendarName: feed.calendar_name, busyTitle: feed.busy_title, ownerEmails },
+    { now, pastDays: feed.past_days, calendarName: feed.calendar_name, busyTitle: feed.busy_title, ownerEmails, uidSalt: userId },
   );
   const fullEtag = `"${(await sha256Hex(feeds.full)).slice(0, 32)}"`;
   const busyEtag = `"${(await sha256Hex(feeds.busy)).slice(0, 32)}"`;
-  const writes: Promise<void>[] = [];
-  if (fullEtag !== feed.full_etag) writes.push(env.FEEDS.put(feedKey(userId, "full"), feeds.full));
-  if (busyEtag !== feed.busy_etag) writes.push(env.FEEDS.put(feedKey(userId, "busy"), feeds.busy));
-  await Promise.all(writes);
-  const modified = writes.length > 0 || !feed.modified_at ? now : feed.modified_at;
+  const changed = fullEtag !== stored.metadata?.etag || busyEtag !== feed.busy_etag;
+  const modified = changed || !feed.modified_at ? now : feed.modified_at;
+  await Promise.all([
+    env.FEEDS.put(feedKey(userId, "full"), feeds.full, { metadata: { etag: fullEtag, modified, input: inputHash } satisfies FeedMeta }),
+    env.FEEDS.put(feedKey(userId, "busy"), feeds.busy, { metadata: { etag: busyEtag, modified, input: inputHash } satisfies FeedMeta }),
+  ]);
 
   await env.DB.prepare(
     `UPDATE feeds SET input_hash = ?, full_etag = ?, busy_etag = ?, modified_at = ?, event_count = ?,
@@ -82,6 +102,16 @@ export async function refreshUser(env: Env, userId: string, now: number, { force
   )
     .bind(inputHash, fullEtag, busyEtag, modified, feeds.eventCount, now, now, next, userId)
     .run();
+  await removeLeftovers(env, userId, sources);
+}
+
+/** If the account or some calendars were deleted while refreshing, delete what this refresh wrote back. */
+async function removeLeftovers(env: Env, userId: string, refreshed: SourceRow[]): Promise<void> {
+  const current = new Set((await listSources(env.DB, userId)).map((s) => s.id));
+  const gone = refreshed.filter((s) => !current.has(s.id)).map((s) => sourceKey(s.id));
+  const user = await env.DB.prepare("SELECT 1 FROM users WHERE id = ?").bind(userId).first();
+  if (!user) gone.push(feedKey(userId, "full"), feedKey(userId, "busy"));
+  await Promise.all(gone.map((key) => env.FEEDS.delete(key)));
 }
 
 async function loadSource(env: Env, source: SourceRow, windowStart: number, now: number): Promise<LoadedSource> {
