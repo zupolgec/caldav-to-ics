@@ -225,6 +225,18 @@ describe("calendars", () => {
     expect(count?.n).toBe(0);
   });
 
+  it("refuses a calendar that is already there", async () => {
+    serveCalendars();
+    const cookie = await signIn(env, "me@example.com");
+    expect((await call(env, "/calendars", { form: { url: WORK_URL }, cookie })).status).toBe(303);
+    const again = await call(env, "/calendars", { form: { url: `  ${WORK_URL.replace("https://", "webcal://")} ` }, cookie });
+    expect(again.status).toBe(422);
+    expect((await again.text()).replace(/&#39;/g, "'")).toContain("already added this calendar");
+    // Someone else can add the same link to their own account.
+    const other = await signIn(env, "other@example.com");
+    expect((await call(env, "/calendars", { form: { url: WORK_URL }, cookie: other })).status).toBe(303);
+  });
+
   it("removes a calendar and its events from the feeds", async () => {
     serveCalendars();
     const cookie = await signIn(env, "me@example.com");

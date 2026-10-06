@@ -1,152 +1,95 @@
-# caldav-to-ics
+# Calendario
 
-Share a calendar that has no public link. caldav-to-ics is a small Cloudflare Worker that reads one or more calendars (CalDAV with a login, or `.ics` URLs), merges them, and publishes them as read-only `.ics` feeds at secret URLs:
+Merge all your calendars into one link you can share. Calendario reads your calendars (secret iCal links from Google, iCloud, Outlook, Fastmail… or CalDAV accounts with a username and password) and publishes them as two read-only feeds:
 
-- **full feed**: every event with all its details;
-- **busy feed**: only when you're busy. Times and recurrences are kept, everything else is removed.
+- a **full** calendar with every event and its details;
+- a **busy** calendar that only shows when you're busy: times and repeats stay, everything else is removed.
 
-Any calendar app can subscribe to these URLs: Google Calendar, Apple Calendar, Outlook, Fantastical, and others.
+Anyone can subscribe to these links from Google Calendar, Apple Calendar, Outlook, Fantastical and any other calendar app.
 
-[![Deploy to Cloudflare](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/zupolgec/caldav-to-ics)
+The hosted version runs at **[calendario.condividi.link](https://calendario.condividi.link)** in Italian and English. It's free, and this repository has everything you need to run your own copy on Cloudflare.
+
+## Features
+
+- **Sign in without passwords.** Enter your email and you get a one-time link (valid 20 minutes). The first sign-in creates the account.
+- **Any calendar with a link**, including `webcal://` links, plus **CalDAV** servers with a username and password. If you paste the account root of a CalDAV server, all of its event calendars are found and added.
+- **Checked when added.** The calendar is downloaded right away, named after its own title, and any problem is explained (wrong link, wrong password, not a calendar…).
+- **Two links, two levels of detail**, each with copy and one-click subscribe buttons for Apple, Google and Outlook.
+- **Up to date.** Calendars are read again every 10 minutes. If one stops answering, its last good copy is kept, so a temporary outage never empties your links.
+- **The last 90 days and everything ahead.** Repeating events are included when any occurrence falls in that range. You can change how many past days to include.
+- **Settings**: calendar name, title of busy events, past days, extra addresses for spotting declined invitations, new links (the old ones stop working at once), account deletion.
+
+### What the busy calendar contains
+
+Each event keeps only its start, end or duration, repeat rules and exceptions, and a fixed title (“Busy”/“Occupato”, configurable). Its `UID` is replaced with a hash, so nothing in it reveals addresses or domains. Titles, descriptions, locations, attendees, organizers, alarms, attachments, URLs and categories are removed.
+
+It leaves out events marked as free (`TRANSP:TRANSPARENT`), cancelled events, and invitations you declined. Your sign-in address, the addresses in your Google calendar links and your CalDAV usernames are recognized automatically; you can add more in the settings. A cancelled single occurrence becomes an exception of its series.
+
+### Privacy and security
+
+- Calendar links and passwords are encrypted in the database with AES-256-GCM and never shown in full again, not even to you.
+- Sign-in links and session cookies are random 256-bit tokens; only their SHA-256 hashes are stored. Sessions last 30 days in an `HttpOnly`, `Secure`, `SameSite=Lax` cookie.
+- Sign-in links are used with an explicit click, so mail scanners that open links can't use them up. Each address can get 5 links an hour, and each IP 10 requests a minute.
+- Forms only accept requests from the site itself (CSRF protection), and pages are served with a strict Content Security Policy.
+- Feed links are random 24-character tokens (about 143 bits).
 
 ## How it works
 
-- Every few minutes (`REFRESH_MINUTES`, default 5), a Cron Trigger reads your sources and stores both feeds, ready to serve, in Workers KV.
-- Calendar apps get the stored feed back right away, with `ETag`/`Last-Modified` so unchanged feeds return `304 Not Modified`.
-- If a source fails, the previous feeds stay online and the error shows up in `/health`. A temporary outage never empties your calendar.
-- The feeds include the last `PAST_DAYS` days (default 90) and everything in the future. A recurring event is included if any of its occurrences falls in that range.
-- Events from all sources are merged into one calendar. Timezones are deduplicated, and `UID`, `RECURRENCE-ID`, `RRULE` and `EXDATE` are kept.
-
-It runs on the Workers free plan for small calendars; see [Free plan limits](#free-plan-limits).
-
-## Setup
-
-### One-click deploy
-
-Click **Deploy to Cloudflare** above. Cloudflare copies the repository into your GitHub account, creates the KV namespace, and asks for the settings below. You can change them later in the dashboard: **Workers & Pages → caldav-to-ics → Settings → Variables and Secrets**.
-
-### Manual deploy
-
-```sh
-git clone https://github.com/zupolgec/caldav-to-ics
-cd caldav-to-ics
-npm install
-npx wrangler deploy                      # creates the KV namespace on first deploy
-npx wrangler secret put SOURCES          # paste the JSON described below
-openssl rand -hex 32 | npx wrangler secret put FULL_TOKEN
-openssl rand -hex 32 | npx wrangler secret put BUSY_TOKEN
+```
+Browser ──► Worker (Hono, server-rendered JSX) ──► D1: users, sessions, calendars (encrypted), feed settings
+                                               └─► KV: ready-made .ics feeds and the last good copy of each calendar
+Cron (every 5 min) ──► Queue ──► Worker: refreshes the feeds that are due
+Calendar apps ──► /c/<token>.ics ──► served straight from KV, with ETag / 304
 ```
 
-### Settings
+- **Cloudflare Workers** with [Hono](https://hono.dev) and server-side JSX. The pages work without JavaScript; a small script adds copy buttons, the help dialog and confirmations.
+- **D1** stores accounts and settings. **KV** stores the generated feeds; they're written only when their content changes.
+- A **Cron Trigger** queues the feeds that are due, and a **Queue** consumer refreshes them, so many accounts never pile up in one invocation. Before rebuilding, each calendar is hashed (ignoring `DTSTAMP`, which Google rewrites on every download): unchanged calendars cost almost no CPU.
+- **Email Service** sends the sign-in emails.
+- The iCalendar engine (`src/engine`) is a small hand-written parser that keeps every property as-is, plus [ical.js](https://github.com/kewisch/ical.js) to walk repeat rules. Tailwind CSS v4 for styles.
 
-| Name | Kind | Default | Description |
-| --- | --- | --- | --- |
-| `SOURCES` | secret | | JSON array of calendars to read (see [Sources](#sources)). |
-| `FULL_TOKEN` | secret | | Token for the full feed URL. Leave it unset to turn the full feed off. |
-| `BUSY_TOKEN` | secret | | Token for the busy feed URL. Leave it unset to turn the busy feed off. |
-| `REFRESH_MINUTES` | variable | `5` | How often the sources are read, in minutes. Minimum 2. |
-| `PAST_DAYS` | variable | `90` | Days of past events to include. |
-| `CALENDAR_NAME` | variable | `Calendar` | Name shown in calendar apps (`X-WR-CALNAME`). |
-| `BUSY_TITLE` | variable | `Busy` | Title of every event in the busy feed. |
-| `OWNER_EMAILS` | variable | | Your addresses, comma-separated. Invitations you declined are left out of the busy feed. |
+## Run your own
 
-Variables set in `wrangler.jsonc` overwrite the ones in the dashboard on every `wrangler deploy`. To keep your own values, edit `wrangler.jsonc` or pass them at deploy time: `npx wrangler deploy --var CALENDAR_NAME:Work`.
+You need a Cloudflare account on the **Workers Paid** plan (Email Sending to any address requires it) and a domain on Cloudflare to send emails from.
 
-### Sources
+1. Enable email sending for your domain: `npx wrangler email sending enable example.com`. It adds SPF, DKIM and DMARC records on a `cf-bounce` subdomain and doesn't touch your MX records.
+2. Deploy:
 
-`SOURCES` is a JSON array, and every entry is one calendar.
+   ```sh
+   git clone https://github.com/zupolgec/caldav-to-ics calendario && cd calendario
+   npm install
+   npm run deploy                 # builds the CSS, creates D1, KV and the queue, applies the migrations
+   openssl rand -base64 32 | npx wrangler secret put ENCRYPTION_KEY
+   npx wrangler deploy --domain calendar.example.com --var EMAIL_FROM:login@example.com
+   ```
 
-**CalDAV** (needs a username and password; sent with Basic auth):
+   Or use the button, then set `ENCRYPTION_KEY` and `EMAIL_FROM` when asked:
 
-```json
-{ "type": "caldav", "url": "https://caldav.example.com/calendars/me/work/", "username": "me@example.com", "password": "app-password" }
-```
+   [![Deploy to Cloudflare](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/zupolgec/caldav-to-ics)
 
-`url` can point at a single calendar or at the account root. With the account root, every event calendar of the account is found and included.
+| Name | Kind | Description |
+| --- | --- | --- |
+| `ENCRYPTION_KEY` | secret | 32 random bytes, base64 (`openssl rand -base64 32`). Encrypts calendar links and passwords. Don't change it afterwards, or saved calendars can't be read anymore. |
+| `EMAIL_FROM` | variable | Sender of sign-in emails, on a domain with email sending enabled. |
+| `REFRESH_MINUTES` | variable | How often calendars are read again. Default `10`. |
 
-**ICS** (a public or secret `.ics` URL; `headers`, `username` and `password` are optional):
-
-```json
-{ "type": "ics", "url": "https://example.com/calendar.ics", "headers": { "Authorization": "Bearer ..." } }
-```
-
-Example with [Forward Email](https://forwardemail.net), which offers CalDAV but no public calendar links. Generate a password for your alias in the Forward Email dashboard (the alias password, not your account password), then:
-
-```json
-[
-  { "type": "caldav", "url": "https://caldav.forwardemail.net/", "username": "you@yourdomain.com", "password": "generated-password" }
-]
-```
-
-The setup is checked on every run. If `SOURCES` is malformed, `/health` explains what's wrong (for example `SOURCES[0]: "username" is required for caldav sources.`).
-
-## Your calendar URLs
-
-```
-https://caldav-to-ics.<your-subdomain>.workers.dev/c/<FULL_TOKEN>.ics
-https://caldav-to-ics.<your-subdomain>.workers.dev/c/<BUSY_TOKEN>.ics
-```
-
-Anyone with a URL can read that feed, so share the busy URL freely and keep the full URL private. Any other path, including a wrong token, returns `404`.
-
-`/health` shows only the time and outcome of the last refresh and the number of events. It never shows event data or source URLs:
-
-```json
-{ "ok": true, "lastAttempt": "2026-10-06T12:00:00.000Z", "lastSuccess": "2026-10-06T12:00:00.000Z", "events": 42 }
-```
-
-### Generating and rotating tokens
-
-Make a token with `openssl rand -hex 32`. To rotate one, set a new value:
-
-```sh
-openssl rand -hex 32 | npx wrangler secret put BUSY_TOKEN
-```
-
-The old URL stops working at once. Subscribers need the new URL.
-
-## Subscribing
-
-- **Google Calendar** (web): **Other calendars → + → From URL**, then paste the URL. Google decides when to refresh, usually every few hours.
-- **Apple Calendar** (macOS): **File → New Calendar Subscription…**, paste the URL, and pick an auto-refresh interval. On iPhone or iPad: **Settings → Apps → Calendar → Calendar Accounts → Add Account → Other → Add Subscribed Calendar**.
-- **Outlook** (web): **Add calendar → Subscribe from web**, then paste the URL.
-- **Fantastical**: **Settings → Accounts → + → Subscribed Calendar**, then paste the URL. You can also subscribe in Apple Calendar and Fantastical will show it.
-
-Some apps prefer `webcal://` links. Replace `https://` with `webcal://` in the URL.
-
-## What the busy feed contains
-
-Each event keeps only:
-
-- start, end or duration (`DTSTART`, `DTEND`, `DURATION`);
-- recurrence and exceptions (`RRULE`, `RDATE`, `EXDATE`, `RECURRENCE-ID`), plus `DTSTAMP` and `SEQUENCE`;
-- a `UID` replaced by a hash of the original, so overrides stay attached to their series;
-- the title `BUSY_TITLE`.
-
-Descriptions, locations, attendees, organizers, alarms, attachments, URLs, categories and the original titles are removed.
-
-These events are left out:
-
-- events marked as free (`TRANSP:TRANSPARENT`);
-- cancelled events (`STATUS:CANCELLED`). A cancelled single occurrence becomes an exception of its series;
-- invitations you declined, if `OWNER_EMAILS` is set.
-
-The full feed contains every event in the date range as the source provides it. Only events (`VEVENT`) are published; to-dos and journal entries are not.
-
-## Free plan limits
-
-- Workers KV allows 1,000 writes a day on the free plan. Each refresh writes once, so a 5-minute interval uses 288 writes a day. This is why `REFRESH_MINUTES` can't go below 2.
-- The Cron Trigger runs every minute and does nothing until `REFRESH_MINUTES` have passed. It uses one of the 5 Cron Triggers a free account gets.
-- The free plan allows 10 ms of CPU per run (waiting for the network doesn't count). A refresh of a small calendar measured about 8 ms, so large calendars may go over it. If a refresh is stopped for that, the previous feeds stay online. The Workers Paid plan allows 30 seconds.
+Schema changes go in `migrations/`; `npm run deploy` applies them after deploying, so keep them backward compatible.
 
 ## Development
 
 ```sh
 npm install
-cp .dev.vars.example .dev.vars   # then fill it in
-npm test                         # Vitest in the Workers runtime; network calls are mocked
-npm run dev -- --test-scheduled  # local server; trigger the cron at /cdn-cgi/handler/scheduled
+cp .dev.vars.example .dev.vars   # then set ENCRYPTION_KEY
+npx wrangler d1 migrations apply DB --local
+npm run dev                      # emails are not sent locally: they're printed in the terminal
+npm test                         # Vitest in the Workers runtime, with D1, KV and mocked calendar servers
+npm run e2e                      # Playwright: the whole journey in Chromium, on separate local data
+npm run typecheck
 ```
+
+The E2E tests start `wrangler dev` on port 8797 with its own data in `.wrangler/e2e` and a small server with fixture calendars. `SCREENSHOTS=1 npx playwright test screenshots` saves screenshots of every page, on desktop and mobile, in `test-results/screens`.
+
+The single-account version this project started from (calendars configured with secrets, no web interface) is tagged [`v0.1.0`](https://github.com/zupolgec/caldav-to-ics/tree/v0.1.0).
 
 ## License
 

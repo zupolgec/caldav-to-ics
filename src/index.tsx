@@ -2,10 +2,10 @@ import { type Context, Hono } from "hono";
 import { deleteCookie, getCookie, setCookie } from "hono/cookie";
 import { csrf } from "hono/csrf";
 import { secureHeaders } from "hono/secure-headers";
-import { maskUrl, probeCalendar } from "./calendars";
-import { FEED_TOKEN_LENGTH, MAX_SOURCES, type User, createUser, deleteUser, feedKey, findFeedByToken, findUserByEmail, getFeed, listSources, sourceKey } from "./db";
+import { maskUrl, normalizeUrl, probeCalendar } from "./calendars";
+import { FEED_TOKEN_LENGTH, MAX_SOURCES, type SourceSecret, type User, createUser, deleteUser, feedKey, findFeedByToken, findUserByEmail, getFeed, listSources, sourceKey } from "./db";
 import { SourceError } from "./engine/sources";
-import { encryptJson, randomToken, sha256Hex } from "./lib/crypto";
+import { decryptJson, encryptJson, randomToken, sha256Hex } from "./lib/crypto";
 import { sendLoginEmail } from "./lib/email";
 import { type Locale, isLocale, negotiateLocale, t } from "./lib/i18n";
 import { type RefreshMessage, contentHash, countEvents, enqueueDueFeeds, refreshInterval, refreshUser } from "./refresh";
@@ -244,7 +244,16 @@ app.post("/calendars", async (c) => {
   const now = c.get("now");
   const existing = await listSources(c.env.DB, user.id);
   if (existing.length >= MAX_SOURCES) {
-    return renderDashboard(c, user, { form: { ...input, error: m.limit(MAX_SOURCES) } }, 422);
+    return renderDashboard(c, user, { form: { url: input.url, username: input.username, error: m.limit(MAX_SOURCES) } }, 422);
+  }
+
+  const url = normalizeUrl(input.url);
+  if (url) {
+    const username = input.username.trim().toLowerCase();
+    const secrets = await Promise.all(existing.map((s) => decryptJson<SourceSecret>(c.env.ENCRYPTION_KEY, s.secret)));
+    if (secrets.some((s) => s.url === url && (s.username ?? "").toLowerCase() === username)) {
+      return renderDashboard(c, user, { form: { url: input.url, username: input.username, error: m.duplicate } }, 422);
+    }
   }
 
   const feed = (await getFeed(c.env.DB, user.id))!;
