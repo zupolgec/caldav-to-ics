@@ -103,9 +103,25 @@ async function loadSource(env: Env, source: SourceRow, windowStart: number, now:
   }
 }
 
-/** Hash of a calendar's content, ignoring DTSTAMP, which some servers rewrite on every download. */
+/**
+ * Hash of a calendar's content that only changes when an event does. Google rewrites
+ * DTSTAMP and shuffles the events on every download, so both are ignored.
+ */
 export async function contentHash(texts: string[]): Promise<string> {
-  return sha256Hex(texts.join("\n").replace(/^DTSTAMP[:;].*$/gm, ""));
+  const outside: string[] = [];
+  const events: string[] = [];
+  let event: string[] | null = null;
+  for (const line of texts.join("\n").replace(/\r?\n[ \t]/g, "").split(/\r?\n/)) {
+    if (/^DTSTAMP[:;]/.test(line)) continue;
+    if (line === "BEGIN:VEVENT") event = [];
+    if (event) event.push(line);
+    else outside.push(line);
+    if (line === "END:VEVENT" && event) {
+      events.push(event.join("\n"));
+      event = null;
+    }
+  }
+  return sha256Hex([...outside, ...events.sort()].join("\n"));
 }
 
 export function countEvents(texts: string[]): number {
