@@ -1,0 +1,62 @@
+{
+  "name": "caldav-to-ics",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Republish CalDAV and ICS calendars as read-only .ics feeds (full or busy-only) behind secret URLs, on Cloudflare Workers.",
+  "license": "MIT",
+  "type": "module",
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit",
+    "cf-typegen": "wrangler types --strict-vars=false"
+  },
+  "dependencies": {
+    "ical.js": "^2.2.1"
+  },
+  "devDependencies": {
+    "@cloudflare/vitest-plugin": "^1.3.7",
+    "@msw/cloudflare": "^0.2.0",
+    "msw": "^3.0.2",
+    "typescript": "^5.9.3",
+    "vitest": "^4.1.11",
+    "wrangler": "^4.148.0"
+  },
+  "allowScripts": {
+    "esbuild@0.28.1": true,
+    "workerd@1.20261006.1": true
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/zupolgec/caldav-to-ics"
+  },
+  "cloudflare": {
+    "bindings": {
+      "SOURCES": {
+        "description": "JSON array of calendars to publish, e.g. `[{\"type\":\"caldav\",\"url\":\"https://caldav.example.com/\",\"username\":\"me@example.com\",\"password\":\"app-password\"},{\"type\":\"ics\",\"url\":\"https://example.com/calendar.ics\"}]`. See the [README](https://github.com/zupolgec/caldav-to-ics#sources)."
+      },
+      "FULL_TOKEN": {
+        "description": "Secret part of the full calendar URL. Generate one with `openssl rand -hex 32`. Leave empty to turn the full feed off."
+      },
+      "BUSY_TOKEN": {
+        "description": "Secret part of the busy-only calendar URL (times only, no details). Generate one with `openssl rand -hex 32`. Leave empty to turn the busy feed off."
+      },
+      "REFRESH_MINUTES": {
+        "description": "How often the calendars are read again, in minutes (minimum 2)."
+      },
+      "PAST_DAYS": {
+        "description": "How many days of past events to include."
+      },
+      "CALENDAR_NAME": {
+        "description": "Calendar name shown in calendar apps."
+      },
+      "BUSY_TITLE": {
+        "description": "Title of every event in the busy-only feed."
+      },
+      "OWNER_EMAILS": {
+        "description": "Optional, comma-separated: your email addresses. Invitations you declined are left out of the busy-only feed."
+      }
+    }
+  }
+}

@@ -1,0 +1,7 @@
+# JSON array of calendar sources, e.g.
+# [{"type":"caldav","url":"https://caldav.example.com/dav/me/calendar/","username":"me@example.com","password":"app-password"},{"type":"ics","url":"https://example.com/cal.ics"}]
+SOURCES=[]
+# Secret token for the full feed (generate with: openssl rand -hex 32). Leave empty to disable.
+FULL_TOKEN=
+# Secret token for the busy-only feed (generate with: openssl rand -hex 32). Leave empty to disable.
+BUSY_TOKEN=

@@ -1,0 +1,18 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "caldav-to-ics",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-10-01",
+  "workers_dev": true,
+  "observability": { "enabled": true },
+  // Runs every minute; the Worker itself decides when REFRESH_MINUTES has elapsed.
+  "triggers": { "crons": ["* * * * *"] },
+  "kv_namespaces": [{ "binding": "FEEDS" }],
+  "vars": {
+    "REFRESH_MINUTES": "5",
+    "PAST_DAYS": "90",
+    "CALENDAR_NAME": "Calendar",
+    "BUSY_TITLE": "Busy",
+    "OWNER_EMAILS": ""
+  }
+}
