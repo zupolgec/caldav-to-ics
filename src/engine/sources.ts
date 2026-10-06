@@ -1,4 +1,21 @@
-import type { Source } from "./config";
+export type Source =
+  | { type: "caldav"; url: string; username: string; password: string }
+  | { type: "ics"; url: string; username?: string; password?: string };
+
+export type SourceErrorCode = "invalid_url" | "unauthorized" | "not_found" | "http" | "not_ics" | "too_large" | "timeout" | "network" | "no_calendars";
+
+/** A failure the interface can explain to the user. */
+export class SourceError extends Error {
+  constructor(
+    readonly code: SourceErrorCode,
+    readonly status?: number,
+  ) {
+    super(status ? `${code} (HTTP ${status})` : code);
+  }
+}
+
+const TIMEOUT_MS = 20_000;
+const MAX_BYTES = 20 * 1024 * 1024;
 
 /** Downloads a source and returns its calendar data as one or more iCalendar documents. */
 export async function fetchSource(source: Source, windowStart: number): Promise<string[]> {
@@ -6,12 +23,34 @@ export async function fetchSource(source: Source, windowStart: number): Promise<
 }
 
 async function fetchIcs(source: Extract<Source, { type: "ics" }>): Promise<string> {
-  const headers = new Headers(source.headers);
-  if (source.username !== undefined) headers.set("Authorization", basicAuth(source.username, source.password ?? ""));
-  const response = await fetch(source.url, { headers });
-  if (!response.ok) throw new Error(`HTTP ${response.status}`);
+  const headers = new Headers({ Accept: "text/calendar, */*" });
+  if (source.username) headers.set("Authorization", basicAuth(source.username, source.password ?? ""));
+  const response = await send(source.url, { headers });
+  checkStatus(response);
+  const text = await readText(response);
+  if (!text.includes("BEGIN:VCALENDAR")) throw new SourceError("not_ics");
+  return text;
+}
+
+async function send(url: string, init: RequestInit): Promise<Response> {
+  try {
+    return await fetch(url, { ...init, signal: AbortSignal.timeout(TIMEOUT_MS) });
+  } catch (error) {
+    throw new SourceError(error instanceof Error && error.name === "TimeoutError" ? "timeout" : "network");
+  }
+}
+
+function checkStatus(response: Response): void {
+  if (response.ok) return;
+  if (response.status === 401 || response.status === 403) throw new SourceError("unauthorized", response.status);
+  if (response.status === 404 || response.status === 410) throw new SourceError("not_found", response.status);
+  throw new SourceError("http", response.status);
+}
+
+async function readText(response: Response): Promise<string> {
+  if (Number(response.headers.get("Content-Length") ?? 0) > MAX_BYTES) throw new SourceError("too_large");
   const text = await response.text();
-  if (!text.includes("BEGIN:VCALENDAR")) throw new Error("the response is not an iCalendar document");
+  if (text.length > MAX_BYTES) throw new SourceError("too_large");
   return text;
 }
 
@@ -24,7 +63,7 @@ async function fetchCaldav(source: CaldavSource, windowStart: number): Promise<s
   const calendars = await discoverCalendars(source, source.url, 0);
   if (calendars.length === 0) {
     if (first) return first; // A calendar that is simply empty.
-    throw new Error("no calendars found at the configured URL");
+    throw new SourceError("no_calendars");
   }
   const results = await Promise.all(calendars.map((url) => calendarQuery(source, url, windowStart)));
   return results.flatMap((texts) => texts ?? []);
@@ -36,7 +75,7 @@ function basicAuth(username: string, password: string): string {
 }
 
 async function dav(source: CaldavSource, method: string, url: string, depth: string, body: string): Promise<Response> {
-  return fetch(url, {
+  return send(url, {
     method,
     headers: {
       Authorization: basicAuth(source.username, source.password),
@@ -62,9 +101,9 @@ async function calendarQuery(source: CaldavSource, url: string, windowStart: num
   </c:filter>
 </c:calendar-query>`;
   const response = await dav(source, "REPORT", url, "1", body);
-  if (response.status === 401 || response.status === 403) throw new Error(`HTTP ${response.status} (check username and password)`);
+  if (response.status === 401 || response.status === 403) throw new SourceError("unauthorized", response.status);
   if (response.status !== 207) return null;
-  const xml = await response.text();
+  const xml = await readText(response);
   return elements(xml, "calendar-data").map(xmlText).filter((text) => text.includes("BEGIN:VCALENDAR"));
 }
 
@@ -81,8 +120,9 @@ async function discoverCalendars(source: CaldavSource, url: string, hops: number
   </d:prop>
 </d:propfind>`;
   const response = await dav(source, "PROPFIND", url, "1", body);
-  if (response.status !== 207) throw new Error(`HTTP ${response.status} while looking for calendars`);
-  const xml = await response.text();
+  if (response.status !== 207) checkStatus(response);
+  if (response.status !== 207) throw new SourceError("no_calendars");
+  const xml = await readText(response);
 
   const calendars: string[] = [];
   let next: string | undefined;

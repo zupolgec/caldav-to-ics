@@ -1,20 +1,18 @@
-import { cloudflareTest } from "@cloudflare/vitest-plugin";
+import path from "node:path";
+import { cloudflareTest, readD1Migrations } from "@cloudflare/vitest-plugin";
 import { defineConfig } from "vitest/config";
 
 export default defineConfig({
   plugins: [
-    cloudflareTest({
+    cloudflareTest(async () => ({
       wrangler: { configPath: "./wrangler.jsonc" },
       miniflare: {
-        kvNamespaces: ["FEEDS"],
         bindings: {
-          FULL_TOKEN: "full-token-test",
-          BUSY_TOKEN: "busy-token-test",
-          OWNER_EMAILS: "me@example.com",
-          SOURCES: "[]",
+          TEST_MIGRATIONS: await readD1Migrations(path.join(__dirname, "migrations")),
+          ENCRYPTION_KEY: "MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY=",
         },
       },
-    }),
+    })),
   ],
-  test: { setupFiles: ["./test/setup.ts"] },
+  test: { setupFiles: ["./test/setup.ts"], include: ["test/**/*.test.ts"] },
 });

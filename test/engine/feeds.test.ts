@@ -1,6 +1,6 @@
 import ICAL from "ical.js";
 import { describe, expect, it } from "vitest";
-import { buildFeeds, type FeedOptions } from "../src/feeds";
+import { buildFeeds, type FeedOptions } from "../../src/engine/feeds";
 import { NOW, SOURCE_A, SOURCE_B } from "./fixtures";
 
 const options: FeedOptions = {

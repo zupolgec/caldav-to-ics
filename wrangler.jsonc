@@ -1,18 +1,24 @@
 {
   "$schema": "node_modules/wrangler/config-schema.json",
-  "name": "caldav-to-ics",
-  "main": "src/index.ts",
+  "name": "calendario",
+  "main": "src/index.tsx",
   "compatibility_date": "2026-10-01",
   "workers_dev": true,
   "observability": { "enabled": true },
-  // Runs every minute; the Worker itself decides when REFRESH_MINUTES has elapsed.
-  "triggers": { "crons": ["* * * * *"] },
+  "build": { "command": "npm run build:css" },
+  "assets": { "directory": "./public", "binding": "ASSETS" },
+  // Every 5 minutes, queue a refresh for every feed that is due.
+  "triggers": { "crons": ["*/5 * * * *"] },
+  "d1_databases": [{ "binding": "DB", "database_name": "calendario", "migrations_dir": "migrations" }],
   "kv_namespaces": [{ "binding": "FEEDS" }],
+  "queues": {
+    "producers": [{ "binding": "REFRESH_QUEUE", "queue": "calendario-refresh" }],
+    "consumers": [{ "queue": "calendario-refresh", "max_batch_size": 5, "max_batch_timeout": 5, "max_retries": 3 }]
+  },
+  "send_email": [{ "name": "EMAIL" }],
+  "ratelimits": [{ "name": "LOGIN_LIMITER", "namespace_id": "1001", "simple": { "limit": 10, "period": 60 } }],
   "vars": {
-    "REFRESH_MINUTES": "5",
-    "PAST_DAYS": "90",
-    "CALENDAR_NAME": "Calendar",
-    "BUSY_TITLE": "Busy",
-    "OWNER_EMAILS": ""
+    "EMAIL_FROM": "",
+    "REFRESH_MINUTES": "10"
   }
 }

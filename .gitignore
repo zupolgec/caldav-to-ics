@@ -1,5 +1,8 @@
-node_modules/
 .dev.vars
+.secrets/
 .wrangler/
 dist/
-.secrets/
+node_modules/
+playwright-report/
+public/app.css
+test-results/
