@@ -10,8 +10,10 @@ import { sendLoginEmail } from "./lib/email";
 import { type Locale, isLocale, negotiateLocale, t } from "./lib/i18n";
 import { type FeedMeta, type RefreshMessage, cleanUp, contentHash, countEvents, enqueueDueFeeds, refreshInterval, refreshUser } from "./refresh";
 import { InvalidLinkPage, LoginPage, NotFoundPage, SentPage, VerifyPage } from "./views/auth";
+import { type PreviewDay, isTimeZone, localDate, previewWeek, startOfWeek } from "./preview";
 import { DashboardPage } from "./views/dashboard";
 import { LandingPage } from "./views/landing";
+import { PreviewPage } from "./views/preview";
 import type { PageContext } from "./views/layout";
 import { type SettingsErrors, SettingsPage, type SettingsValues } from "./views/settings";
 
@@ -305,6 +307,41 @@ app.post("/calendars/:id/delete", async (c) => {
   await c.env.FEEDS.delete(sourceKey(id));
   c.executionCtx.waitUntil(refreshUser(c.env, user.id, c.get("now"), { force: true }));
   return c.redirect("/dashboard?done=removed", 303);
+});
+
+// --- Preview ---
+
+app.get("/preview", async (c) => {
+  const user = requireUser(c);
+  if (user instanceof Response) return user;
+  const now = c.get("now");
+  const cookieTz = getCookie(c, "tz");
+  const tzGuessed = !isTimeZone(cookieTz);
+  const tz = isTimeZone(cookieTz) ? cookieTz : c.get("locale") === "it" ? "Europe/Rome" : "UTC";
+  const view = c.req.query("view") === "busy" ? "busy" : "full";
+  const week = c.req.query("week") ?? "";
+  const weekStart = /^\d{4}-\d{2}-\d{2}$/.test(week) && !Number.isNaN(Date.parse(week)) ? startOfWeek(Date.parse(`${week}T12:00:00Z`), "UTC") : startOfWeek(now, tz);
+
+  const [feed, sources] = await Promise.all([getFeed(c.env.DB, user.id), listSources(c.env.DB, user.id)]);
+  let days: PreviewDay[] | null = null;
+  if (sources.length > 0) {
+    if (!feed!.full_etag) await refreshUser(c.env, user.id, now, { force: true });
+    const body = await c.env.FEEDS.get(feedKey(user.id, view));
+    if (body) {
+      // In the full view each event takes the colour of the calendar it comes from.
+      const colors = new Map<string, number>();
+      if (view === "full") {
+        const copies = await Promise.all(sources.map((s) => c.env.FEEDS.get<string[]>(sourceKey(s.id), "json")));
+        copies.forEach((texts, i) => {
+          for (const match of (texts ?? []).join("\n").replace(/\r?\n[ \t]/g, "").matchAll(/^UID:(.+?)\r?$/gm)) colors.set(match[1], sources[i].color);
+        });
+      }
+      days = previewWeek(body, weekStart, tz, (uid) => colors.get(uid) ?? null);
+    }
+  }
+  return c.html(
+    <PreviewPage ctx={pageContext(c)} view={view} weekStart={weekStart} today={localDate(now, tz)} tz={tz} tzGuessed={tzGuessed} days={days} sources={sources} />,
+  );
 });
 
 // --- Settings ---

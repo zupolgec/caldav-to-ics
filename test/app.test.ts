@@ -440,6 +440,32 @@ describe("background refresh", () => {
   });
 });
 
+describe("preview", () => {
+  it("shows a week of the merged calendar, full or busy, in the viewer's timezone", async () => {
+    serveCalendars();
+    expect((await call(env, "/preview")).headers.get("Location")).toBe("/login");
+    const cookie = await signIn(env, "me@example.com");
+    await call(env, "/calendars", { form: { url: WORK_URL }, cookie });
+
+    const full = await html(await call(env, "/preview?week=2026-10-19", { cookie: `${cookie}; tz=Europe/Rome` }));
+    expect(full).toContain("Weekly standup (moved)");
+    expect(full).toContain("10:00–10:30");
+    expect(full).toContain("Europe/Rome");
+
+    const busy = await html(await call(env, "/preview?week=2026-10-19&view=busy", { cookie: `${cookie}; tz=America/New_York` }));
+    expect(busy).not.toContain("Weekly standup");
+    expect(busy).toContain("Busy");
+    expect(busy).toContain("4:00–4:30");
+  });
+
+  it("starts from the current week and ignores malformed input", async () => {
+    const cookie = await signIn(env, "me@example.com");
+    const page = await html(await call(env, "/preview?week=nope&view=<script>", { cookie: `${cookie}; tz=Not/AZone` }));
+    expect(page).toContain("Add your first calendar");
+    expect(page).not.toContain("<script>");
+  });
+});
+
 describe("account", () => {
   it("deletes the account, its calendars and its links", async () => {
     serveCalendars();

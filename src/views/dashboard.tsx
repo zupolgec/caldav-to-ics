@@ -126,6 +126,11 @@ export const DashboardPage: FC<DashboardProps> = (props) => {
             </div>
             <LinkField id="full-url" label={m.full} hint={m.fullHint} url={fullUrl} name={feed.calendar_name} locale={ctx.locale} />
             <LinkField id="busy-url" label={m.busy} hint={m.busyHint(feed.busy_title)} url={busyUrl} name={feed.calendar_name} locale={ctx.locale} busy />
+            {sources.length > 0 && (
+              <a class="link self-start" href="/preview">
+                {m.previewLink}
+              </a>
+            )}
           </div>
         </section>
       </div>

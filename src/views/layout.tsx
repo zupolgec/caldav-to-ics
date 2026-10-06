@@ -3,7 +3,7 @@ import { type Locale, LOCALES, t } from "../lib/i18n";
 
 export const REPO_URL = "https://github.com/zupolgec/caldav-to-ics";
 // Bump when public/app.css or public/app.js change, so browsers fetch the new files.
-const ASSET_VERSION = "3";
+const ASSET_VERSION = "4";
 
 export interface PageContext {
   locale: Locale;
@@ -32,17 +32,20 @@ export const Layout: FC<{ ctx: PageContext; title?: string; fill?: boolean; chil
         <script src={`/app.js?v=${ASSET_VERSION}`} defer />
       </head>
       <body class="flex min-h-dvh flex-col font-sans">
-        <header class="flex items-center justify-between gap-3 px-5 py-4 sm:px-8">
+        <header class="flex flex-wrap items-center justify-between gap-x-3 gap-y-2 px-5 py-4 sm:px-8">
           <a href={ctx.signedIn ? "/dashboard" : "/"} class="group flex shrink-0 items-baseline text-xl font-extrabold tracking-tight" aria-label="Calendario">
             <span>calendario</span>
             <span class={`font-medium text-ink-soft transition-colors group-hover:text-ink ${ctx.signedIn ? "hidden sm:inline" : ""}`}>.condividi.link</span>
           </a>
-          <nav class="flex items-center gap-0 text-sm font-semibold sm:gap-3" aria-label="Menu">
+          <nav class="-mx-2 flex items-center gap-0 text-sm font-semibold sm:mx-0 sm:gap-3" aria-label="Menu">
             {ctx.signedIn ? (
               <>
                 {ctx.email && <span class="mr-2 hidden font-medium text-ink-soft md:inline">{ctx.email}</span>}
                 <NavLink href="/dashboard" current={ctx.path === "/dashboard"}>
                   {m.nav.calendars}
+                </NavLink>
+                <NavLink href="/preview" current={ctx.path === "/preview"}>
+                  {m.nav.preview}
                 </NavLink>
                 <NavLink href="/settings" current={ctx.path === "/settings"}>
                   {m.nav.settings}

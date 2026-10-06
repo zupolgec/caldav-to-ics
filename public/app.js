@@ -51,3 +51,13 @@ document.addEventListener("submit", (event) => {
 
 // One-off messages (?added=…, ?done=…) shouldn't come back when the page is reloaded.
 if (/[?&](added|done)=/.test(location.search)) history.replaceState(null, "", location.pathname);
+
+// Remember the browser's timezone, so the preview shows times as the viewer sees them.
+{
+  const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
+  const current = document.cookie.split("; ").find((c) => c.startsWith("tz="));
+  if (tz && current !== `tz=${encodeURIComponent(tz)}`) {
+    document.cookie = `tz=${encodeURIComponent(tz)}; path=/; max-age=31536000; samesite=lax; secure`;
+    if (document.querySelector("[data-reload-on-tz]")) location.reload();
+  }
+}

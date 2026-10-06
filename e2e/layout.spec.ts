@@ -35,7 +35,9 @@ for (const viewport of [
     expect(dashboard.x, "/dashboard").toBeLessThanOrEqual(0);
     // The empty dashboard fits on a desktop screen: nothing to scroll.
     if (viewport.width >= 1024) expect(dashboard.y, "/dashboard").toBeLessThanOrEqual(0);
-    await page.goto("/settings");
-    expect((await overflow(page)).x, "/settings").toBeLessThanOrEqual(0);
+    for (const path of ["/settings", "/preview", "/preview?view=busy"]) {
+      await page.goto(path);
+      expect((await overflow(page)).x, path).toBeLessThanOrEqual(0);
+    }
   });
 }

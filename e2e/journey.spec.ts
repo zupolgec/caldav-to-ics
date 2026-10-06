@@ -72,6 +72,15 @@ test("someone signs up, merges two calendars and shares the links", async ({ pag
   expect(busy).not.toContain("Secret project kickoff");
   expect(busy).toContain("SUMMARY:Occupato");
 
+  // The preview shows this week, with every detail or only busy time.
+  await page.getByRole("link", { name: "Anteprima", exact: true }).click();
+  await expect(page.getByRole("heading", { level: 1, name: "Anteprima" })).toBeVisible();
+  const today = page.locator("li[aria-current=date]");
+  await expect(today.getByText("Planning")).toBeVisible();
+  await page.getByRole("link", { name: "Occupato", exact: true }).click();
+  await expect(today.getByText("Planning")).toBeHidden();
+  await expect(today.getByText("Occupato")).toBeVisible();
+
   // Rename the calendar in the settings.
   await page.getByRole("link", { name: "Impostazioni" }).click();
   await page.getByLabel("Nome del calendario").fill("Agenda di prova");

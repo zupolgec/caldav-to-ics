@@ -42,6 +42,11 @@ for (const [name, viewport] of [
     await page.getByRole("button", { name: "Dove trovo il link?" }).click();
     await page.screenshot({ path: out(`${name}-help`) });
     await page.keyboard.press("Escape");
+    await page.goto("/preview");
+    await page.waitForLoadState("networkidle");
+    await page.screenshot({ path: out(`${name}-preview`), fullPage: true });
+    await page.goto("/preview?view=busy");
+    await page.screenshot({ path: out(`${name}-preview-busy`), fullPage: true });
     await page.goto("/settings");
     await page.screenshot({ path: out(`${name}-settings`), fullPage: true });
     await context.close();
