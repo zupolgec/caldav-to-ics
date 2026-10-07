@@ -18,13 +18,16 @@ The hosted version runs at **[calendario.condividi.link](https://calendario.cond
 - **Week preview** of exactly what each link shows, full or busy, with one colour per calendar and times in your own timezone.
 - **Up to date.** Calendars are read again every 10 minutes. If one stops answering, its last good copy is kept, so a temporary outage never empties your links.
 - **The last 90 days and everything ahead.** Repeating events are included when any occurrence falls in that range. You can change how many past days to include.
-- **Settings**: calendar name, title of busy events, past days, extra addresses for spotting declined invitations, new links (the old ones stop working at once), account deletion.
+- **Only invitations you're going to.** In both links, an invitation appears only if you accepted it or answered maybe; declined and unanswered ones are left out. Your own events, and the ones you organize, always appear.
+- **Settings**: calendar name, title of busy events, past days, extra addresses for recognizing your invitations, new links (the old ones stop working at once), account deletion.
 
 ### What the busy calendar contains
 
 Each event keeps only its start, end or duration, repeat rules and exceptions, and a fixed title (“Busy”/“Occupato”, configurable). Its `UID` is replaced with a hash salted per account, so nothing in it reveals addresses or domains, and two people's busy calendars can't be matched up to find shared meetings. Only the timezones its events use are included. Titles, descriptions, locations, attendees, organizers, alarms, attachments, URLs and categories are removed.
 
-It leaves out events marked as free (`TRANSP:TRANSPARENT`), cancelled events, and invitations you declined. Your sign-in address, the addresses in your Google calendar links and your CalDAV usernames are recognized automatically; you can add more in the settings. A cancelled single occurrence becomes an exception of its series; a busy occurrence of a series that is left out becomes an event of its own.
+It leaves out events marked as free (`TRANSP:TRANSPARENT`) and cancelled events, on top of the invitations you didn't accept (left out of both links).
+
+To recognize your invitations, your sign-in address, the addresses in your Google calendar links and your CalDAV usernames are used automatically; you can add more in the settings. An occurrence left out of a series that is published becomes an exception (`EXDATE`) of it; a published occurrence of a series that is left out becomes an event of its own.
 
 ### Privacy and security
 

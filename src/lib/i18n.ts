@@ -41,7 +41,7 @@ const it = {
     keepsList: ["giorno, ora d'inizio e di fine", "ricorrenze ed eccezioni"],
     hides: "e toglie",
     hidesList: ["titolo, descrizione e luogo", "partecipanti e organizzatore", "promemoria, allegati e link"],
-    skips: "Non mostra gli eventi segnati come liberi, quelli annullati e gli inviti che hai rifiutato.",
+    skips: "Non mostra gli eventi segnati come liberi e quelli annullati. In entrambi i link, gli inviti compaiono solo se li hai accettati o hai risposto forse.",
     worksTitle: "Funziona con",
     works: ["Google Calendar", "Apple iCloud", "Outlook e Microsoft 365", "Fastmail", "Nextcloud", "Forward Email", "Qualsiasi link .ics o webcal"],
     worksNote: "Per i calendari CalDAV basta indirizzo, utente e password.",
@@ -61,7 +61,7 @@ const it = {
       },
       {
         q: "Quali eventi includete?",
-        a: "Gli ultimi 90 giorni e tutto il futuro, ricorrenze comprese. Puoi cambiare quanti giorni passati includere nelle impostazioni.",
+        a: "Gli ultimi 90 giorni e tutto il futuro, ricorrenze comprese. Degli inviti ricevuti compaiono solo quelli che hai accettato o a cui hai risposto forse: quelli rifiutati o senza risposta no. Puoi cambiare quanti giorni passati includere nelle impostazioni.",
       },
       {
         q: "Quanto costa?",
@@ -229,7 +229,7 @@ const it = {
     pastDaysHint: "Gli eventi futuri ci sono sempre tutti.",
     extraEmails: "Altri tuoi indirizzi email",
     extraEmailsHint:
-      "Separali con una virgola. Gli inviti che hai rifiutato con questi indirizzi non compaiono nel calendario occupato. Il tuo indirizzo di accesso e quelli dei calendari collegati li riconosciamo già.",
+      "Separali con una virgola. Gli inviti ricevuti a questi indirizzi compaiono solo se li hai accettati o hai risposto forse. Il tuo indirizzo di accesso e quelli dei calendari collegati li riconosciamo già.",
     save: "Salva",
     saved: "Salvato.",
     invalid: "Controlla i campi evidenziati.",
@@ -307,7 +307,7 @@ const en: Messages = {
     keepsList: ["the day, start and end time", "repeats and exceptions"],
     hides: "and removes",
     hidesList: ["title, description and location", "guests and organizer", "reminders, attachments and links"],
-    skips: "It leaves out events marked as free, cancelled events and invitations you declined.",
+    skips: "It leaves out events marked as free and cancelled events. In both links, invitations only appear if you accepted them or answered maybe.",
     worksTitle: "Works with",
     works: ["Google Calendar", "Apple iCloud", "Outlook and Microsoft 365", "Fastmail", "Nextcloud", "Forward Email", "Any .ics or webcal link"],
     worksNote: "For CalDAV calendars, all you need is the address, a username and a password.",
@@ -327,7 +327,7 @@ const en: Messages = {
       },
       {
         q: "Which events are included?",
-        a: "The last 90 days and everything ahead, repeating events included. You can change how many past days to include in the settings.",
+        a: "The last 90 days and everything ahead, repeating events included. Invitations only appear if you accepted them or answered maybe, not if you declined or haven't answered. You can change how many past days to include in the settings.",
       },
       {
         q: "How much does it cost?",
@@ -491,7 +491,7 @@ const en: Messages = {
     pastDaysHint: "Future events are always all included.",
     extraEmails: "Your other email addresses",
     extraEmailsHint:
-      "Separate them with commas. Invitations you declined with these addresses don't appear in the busy calendar. We already recognize your sign-in address and the ones of your connected calendars.",
+      "Separate them with commas. Invitations sent to these addresses only appear if you accepted them or answered maybe. We already recognize your sign-in address and the ones of your connected calendars.",
     save: "Save",
     saved: "Saved.",
     invalid: "Check the highlighted fields.",

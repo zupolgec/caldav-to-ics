@@ -41,14 +41,13 @@ describe("full feed", () => {
     expect(uids(full)).toEqual([
       "cancelled@example.com",
       "count-in-window@example.org",
-      "declined@example.com",
       "free@example.com",
       "meeting-1@example.com",
       "moved-into-window@example.org",
       "recent@example.org",
       "weekly@example.com",
     ]);
-    expect(eventCount).toBe(8);
+    expect(eventCount).toBe(7); // the declined invitation isn't published
   });
 
   it("keeps all event data, recurrence rules and exceptions untouched", async () => {
@@ -80,6 +79,106 @@ describe("full feed", () => {
   });
 });
 
+const invitations = [
+  "BEGIN:VCALENDAR",
+  "VERSION:2.0",
+  ...[
+    ["accepted", "ATTENDEE;PARTSTAT=ACCEPTED:mailto:me@example.com"],
+    ["tentative", "ATTENDEE;PARTSTAT=TENTATIVE:mailto:me@example.com"],
+    ["unanswered", "ATTENDEE;PARTSTAT=NEEDS-ACTION:mailto:me@example.com"],
+    ["no-answer-field", "ATTENDEE:mailto:me@example.com"],
+    ["declined", "ATTENDEE;PARTSTAT=DECLINED:mailto:me@example.com"],
+    ["delegated", "ATTENDEE;PARTSTAT=DELEGATED:mailto:me@example.com"],
+    ["own-event", ""],
+    ["organizer", "ORGANIZER:mailto:me@example.com\r\nATTENDEE;PARTSTAT=NEEDS-ACTION:mailto:guest@example.com"],
+    ["someone-elses", "ATTENDEE;PARTSTAT=ACCEPTED:mailto:guest@example.com"],
+    ["answered-twice", "ATTENDEE;PARTSTAT=NEEDS-ACTION:mailto:me@example.com\r\nATTENDEE;PARTSTAT=ACCEPTED:mailto:me@example.com"],
+  ].map(([uid, extra], i) =>
+    ["BEGIN:VEVENT", `UID:${uid}`, "DTSTAMP:20261001T080000Z", `DTSTART:202610${12 + i}T090000Z`, `DTEND:202610${12 + i}T100000Z`, `SUMMARY:${uid}`, extra, "END:VEVENT"]
+      .filter(Boolean)
+      .join("\r\n"),
+  ),
+  // A weekly meeting: accepted, but one occurrence unanswered and one declined.
+  "BEGIN:VEVENT",
+  "UID:weekly-accepted",
+  "DTSTAMP:20261001T080000Z",
+  "DTSTART:20261012T150000Z",
+  "DTEND:20261012T160000Z",
+  "RRULE:FREQ=WEEKLY;COUNT=4",
+  "SUMMARY:Weekly accepted",
+  "ATTENDEE;PARTSTAT=ACCEPTED:mailto:me@example.com",
+  "END:VEVENT",
+  "BEGIN:VEVENT",
+  "UID:weekly-accepted",
+  "DTSTAMP:20261001T080000Z",
+  "RECURRENCE-ID:20261019T150000Z",
+  "DTSTART:20261019T150000Z",
+  "DTEND:20261019T160000Z",
+  "SUMMARY:Weekly accepted",
+  "ATTENDEE;PARTSTAT=NEEDS-ACTION:mailto:me@example.com",
+  "END:VEVENT",
+  "BEGIN:VEVENT",
+  "UID:weekly-accepted",
+  "DTSTAMP:20261001T080000Z",
+  "RECURRENCE-ID:20261026T150000Z",
+  "DTSTART:20261026T150000Z",
+  "DTEND:20261026T160000Z",
+  "SUMMARY:Weekly accepted",
+  "ATTENDEE;PARTSTAT=DECLINED:mailto:me@example.com",
+  "END:VEVENT",
+  // A weekly meeting: declined, but one occurrence accepted.
+  "BEGIN:VEVENT",
+  "UID:weekly-declined",
+  "DTSTAMP:20261001T080000Z",
+  "DTSTART:20261013T150000Z",
+  "DTEND:20261013T160000Z",
+  "RRULE:FREQ=WEEKLY;COUNT=4",
+  "SUMMARY:Weekly declined",
+  "ATTENDEE;PARTSTAT=DECLINED:mailto:me@example.com",
+  "END:VEVENT",
+  "BEGIN:VEVENT",
+  "UID:weekly-declined",
+  "DTSTAMP:20261001T080000Z",
+  "RECURRENCE-ID:20261020T150000Z",
+  "DTSTART:20261020T150000Z",
+  "DTEND:20261020T160000Z",
+  "SUMMARY:Weekly declined",
+  "ATTENDEE;PARTSTAT=ACCEPTED:mailto:me@example.com",
+  "END:VEVENT",
+  "END:VCALENDAR",
+  "",
+].join("\r\n");
+
+describe("invitations", () => {
+  it("publishes only invitations the owner accepted or answered maybe to, in both feeds", async () => {
+    const { full, busy } = await buildFeeds([invitations], options);
+    // The single invitations all start at 09:00; the weekly meetings at 15:00.
+    const singles = (ics: string) => events(ics).filter((e) => e.getFirstPropertyValue("dtstart")!.toString().endsWith("T09:00:00Z"));
+    expect(singles(full).map((e) => e.getFirstPropertyValue("uid")).sort()).toEqual(["accepted", "answered-twice", "organizer", "own-event", "someone-elses", "tentative"]);
+    expect(singles(busy)).toHaveLength(6);
+  });
+
+  it("removes unanswered and declined occurrences from an accepted series", async () => {
+    const { full, busy } = await buildFeeds([invitations], options);
+    for (const ics of [full, busy]) {
+      const series = events(ics).filter((e) => e.hasProperty("rrule") && e.getFirstPropertyValue("dtstart")!.toString() === "2026-10-12T15:00:00Z");
+      expect(series).toHaveLength(1);
+      expect(series[0].getAllProperties("exdate").map((p) => p.getFirstValue()!.toString()).sort()).toEqual(["2026-10-19T15:00:00Z", "2026-10-26T15:00:00Z"]);
+    }
+    expect(events(full).filter((e) => e.getFirstPropertyValue("uid") === "weekly-accepted")).toHaveLength(1);
+  });
+
+  it("keeps an accepted occurrence of a declined series as an event of its own", async () => {
+    const { full, busy } = await buildFeeds([invitations], options);
+    for (const ics of [full, busy]) {
+      const declined = events(ics).filter((e) => ["2026-10-13T15:00:00Z", "2026-10-20T15:00:00Z"].includes(e.getFirstPropertyValue("dtstart")!.toString()));
+      expect(declined.map((e) => e.getFirstPropertyValue("dtstart")!.toString())).toEqual(["2026-10-20T15:00:00Z"]);
+      expect(declined[0].hasProperty("recurrence-id")).toBe(false);
+      expect(declined[0].hasProperty("rrule")).toBe(false);
+    }
+  });
+});
+
 describe("busy feed", () => {
   it("contains only times, recurrences and a fixed title", async () => {
     const { busy } = await buildFeeds([SOURCE_A, SOURCE_B], { ...options, busyTitle: "Occupato" });
@@ -106,8 +205,8 @@ describe("busy feed", () => {
 
   it("excludes transparent, cancelled and declined events", async () => {
     const { busy, full } = await buildFeeds([SOURCE_A, SOURCE_B], options);
-    // 8 UIDs in the full feed minus free, cancelled and declined.
-    expect(uids(full)).toHaveLength(8);
+    // 7 UIDs in the full feed (the declined one is never published) minus free and cancelled.
+    expect(uids(full)).toHaveLength(7);
     expect(uids(busy)).toHaveLength(5);
     const starts = events(busy).map((e) => e.getFirstPropertyValue("dtstart")!.toString());
     expect(starts).not.toContain("2026-10-15");
@@ -176,7 +275,8 @@ describe("busy feed", () => {
   });
 
   it("keeps declined invitations when no owner address is configured", async () => {
-    const { busy } = await buildFeeds([SOURCE_A, SOURCE_B], { ...options, ownerEmails: [] });
+    const { busy, full } = await buildFeeds([SOURCE_A, SOURCE_B], { ...options, ownerEmails: [] });
     expect(uids(busy)).toHaveLength(6);
+    expect(uids(full)).toContain("declined@example.com");
   });
 });

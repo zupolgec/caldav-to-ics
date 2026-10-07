@@ -53,16 +53,22 @@ export async function buildFeeds(sources: string[], options: FeedOptions): Promi
     .map(([uid, group]) => ({ uid, events: [...group.values()] }))
     .filter(({ events }) => seriesInWindow(events, windowStart));
 
-  const fullEvents = kept.flatMap(({ events }) => events);
+  const fullEvents: Component[] = [];
   const busyEvents: Component[] = [];
-  for (const { uid, events } of kept) busyEvents.push(...(await busySeries(uid, events, options)));
+  let eventCount = 0;
+  for (const { uid, events } of kept) {
+    const full = fullSeries(uid, selectSeries(events, (e) => isAttending(e, options.ownerEmails)));
+    if (full.length > 0) eventCount++;
+    fullEvents.push(...full);
+    busyEvents.push(...(await busySeries(uid, selectSeries(events, (e) => isBusy(e, options.ownerEmails)), options)));
+  }
 
   // The busy feed only carries the timezones its events use.
   const busyTzids = new Set(busyEvents.flatMap((e) => e.props.map((p) => getParam(p, "TZID")).filter((tz): tz is string => !!tz)));
   return {
     full: calendar(options.calendarName, [...timezones.values()], fullEvents),
     busy: calendar(options.calendarName, [...timezones.entries()].filter(([tzid]) => busyTzids.has(tzid)).map(([, tz]) => tz), busyEvents),
-    eventCount: kept.length,
+    eventCount,
   };
 }
 
@@ -82,52 +88,83 @@ function calendar(name: string, timezones: Component[], events: Component[]): st
   ]);
 }
 
-async function busySeries(uid: string, events: Component[], options: FeedOptions): Promise<Component[]> {
+/** The events of one series (a master and its exceptions, sharing a UID) that a feed publishes. */
+interface Selection {
+  /** The master, when published, plus EXDATEs for its occurrences that are left out. */
+  master?: Component;
+  exdates: Property[];
+  /** Published exceptions of a published master. */
+  exceptions: Component[];
+  /** Published exceptions whose master is left out: they become events of their own. */
+  standalone: Component[];
+}
+
+function selectSeries(events: Component[], include: (event: Component) => boolean): Selection {
+  const master = events.find((e) => !getProp(e, "RECURRENCE-ID"));
+  const keepMaster = !!master && include(master);
+  const selection: Selection = { master: keepMaster ? master : undefined, exdates: [], exceptions: [], standalone: [] };
+  for (const event of events) {
+    if (event === master) continue;
+    const recurrenceId = getProp(event, "RECURRENCE-ID")!;
+    if (include(event)) (keepMaster ? selection.exceptions : selection.standalone).push(event);
+    else if (keepMaster) selection.exdates.push(exdateFor(recurrenceId));
+  }
+  return selection;
+}
+
+function exdateFor(recurrenceId: Property): Property {
+  const params = ["TZID", "VALUE"]
+    .map((name) => [name, getParam(recurrenceId, name)])
+    .filter(([, value]) => value)
+    .map(([name, value]) => `${name}=${value}`)
+    .join(";");
+  return prop("EXDATE", recurrenceId.value, params);
+}
+
+/** An exception turned into an event of its own: no RECURRENCE-ID, and a UID of its own. */
+function detach(event: Component, uid: string): Component {
+  return { ...event, props: [prop("UID", uid), ...event.props.filter((p) => p.name !== "UID" && p.name !== "RECURRENCE-ID")] };
+}
+
+function fullSeries(uid: string, selection: Selection): Component[] {
+  const result: Component[] = [];
+  if (selection.master) result.push({ ...selection.master, props: [...selection.master.props, ...selection.exdates] });
+  result.push(...selection.exceptions);
+  for (const event of selection.standalone) result.push(detach(event, `${uid}-${getProp(event, "RECURRENCE-ID")!.value}`));
+  return result;
+}
+
+async function busySeries(uid: string, selection: Selection, options: FeedOptions): Promise<Component[]> {
   const salt = options.uidSalt ?? "";
   const hashedUid = `${await sha256(`${salt}\n${uid}`)}@calendario`;
-  const master = events.find((e) => !getProp(e, "RECURRENCE-ID"));
-  const masterBusy = master && isBusy(master, options.ownerEmails);
   const result: Component[] = [];
-  const exdates: Property[] = [];
-
-  for (const event of events) {
-    const recurrenceId = getProp(event, "RECURRENCE-ID");
-    if (event === master) continue;
-    if (isBusy(event, options.ownerEmails) && masterBusy) {
-      result.push(sanitize(event, hashedUid, options.busyTitle));
-    } else if (isBusy(event, options.ownerEmails)) {
-      // Its series isn't published: without it, calendar apps would drop the occurrence.
-      const ownUid = `${await sha256(`${salt}\n${uid}\n${recurrenceId?.value ?? ""}`)}@calendario`;
-      const standalone = sanitize(event, ownUid, options.busyTitle);
-      standalone.props = standalone.props.filter((p) => p.name !== "RECURRENCE-ID");
-      result.push(standalone);
-    } else if (masterBusy && recurrenceId) {
-      // A skipped occurrence of a busy series: remove it from the series instead.
-      const params = ["TZID", "VALUE"]
-        .map((name) => [name, getParam(recurrenceId, name)])
-        .filter(([, value]) => value)
-        .map(([name, value]) => `${name}=${value}`)
-        .join(";");
-      exdates.push(prop("EXDATE", recurrenceId.value, params));
-    }
+  if (selection.master) {
+    const master = sanitize(selection.master, hashedUid, options.busyTitle);
+    master.props.push(...selection.exdates);
+    result.push(master);
   }
-
-  if (masterBusy) {
-    const sanitized = sanitize(master, hashedUid, options.busyTitle);
-    sanitized.props.push(...exdates);
-    result.unshift(sanitized);
+  for (const event of selection.exceptions) result.push(sanitize(event, hashedUid, options.busyTitle));
+  for (const event of selection.standalone) {
+    const ownUid = `${await sha256(`${salt}\n${uid}\n${getProp(event, "RECURRENCE-ID")!.value}`)}@calendario`;
+    result.push(detach(sanitize(event, ownUid, options.busyTitle), ownUid));
   }
   return result;
+}
+
+/**
+ * Whether the owner takes part: events they're not invited to (their own, or where they
+ * organize) always count; invitations only if accepted or answered "maybe".
+ */
+function isAttending(event: Component, ownerEmails: string[]): boolean {
+  const mine = getProps(event, "ATTENDEE").filter((attendee) => ownerEmails.includes(attendee.value.trim().replace(/^mailto:/i, "").toLowerCase()));
+  if (mine.length === 0) return true;
+  return mine.some((attendee) => ["ACCEPTED", "TENTATIVE"].includes(getParam(attendee, "PARTSTAT")?.toUpperCase() ?? "NEEDS-ACTION"));
 }
 
 function isBusy(event: Component, ownerEmails: string[]): boolean {
   if (getProp(event, "TRANSP")?.value.trim().toUpperCase() === "TRANSPARENT") return false;
   if (getProp(event, "STATUS")?.value.trim().toUpperCase() === "CANCELLED") return false;
-  return !getProps(event, "ATTENDEE").some(
-    (attendee) =>
-      getParam(attendee, "PARTSTAT")?.toUpperCase() === "DECLINED" &&
-      ownerEmails.includes(attendee.value.trim().replace(/^mailto:/i, "").toLowerCase()),
-  );
+  return isAttending(event, ownerEmails);
 }
 
 function sanitize(event: Component, uid: string, title: string): Component {

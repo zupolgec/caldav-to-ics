@@ -4,6 +4,8 @@ import { SourceError, fetchSource } from "./engine/sources";
 import { decryptJson, sha256Hex } from "./lib/crypto";
 
 const DAY = 86_400_000;
+// Bump when the rules that build feeds change, so every feed is rebuilt at its next refresh.
+const FEED_FORMAT = 2;
 
 export function refreshInterval(env: Env): number {
   const minutes = Number.parseInt(env.REFRESH_MINUTES ?? "", 10);
@@ -70,7 +72,7 @@ export async function refreshUser(env: Env, userId: string, now: number, { force
   const ownerEmails = ownerAddresses(user.email, feed.extra_emails, sources, secrets);
   const settings = [feed.calendar_name, feed.busy_title, feed.past_days, ownerEmails];
   const day = new Date(now).toISOString().slice(0, 10); // the window moves once a day
-  const inputHash = await sha256Hex(JSON.stringify([loaded.map((l) => l.hash), settings, day]));
+  const inputHash = await sha256Hex(JSON.stringify([FEED_FORMAT, loaded.map((l) => l.hash), settings, day]));
 
   const next = now + refreshInterval(env);
   // Skip the rebuild only if the stored body was built from these same inputs: a slower,
