@@ -13,7 +13,7 @@ Data: 7 ottobre 2026. Obiettivo: trasformare il worker in un'app simile a calend
 - **Indirizzi del proprietario** per escludere gli inviti rifiutati: email dell'account, indirizzi nei link Google (`/calendar/ical/<email>/private-…`), utenti CalDAV, nomi di calendario che sono indirizzi, più quelli aggiunti nelle impostazioni.
 - **Design**: inchiostro indaco su carta (`#1b1f3b` su `#fbfbf8`), carattere Schibsted Grotesk servito dal sito, numeri grandi da calendario da muro (riferimento ai calendari di Vignelli), un colore per ogni calendario unito, tratteggio diagonale per il tempo occupato. La demo in home usa la settimana corrente.
 - **Lingua**: cookie `lang` scelto con il selettore, poi lingua salvata nell'account, poi `Accept-Language`; ripiego inglese. Le email partono nella lingua in cui è stato chiesto il link.
-- **Versione precedente**: il worker a utente singolo è nel tag `v0.1.0` ed è ancora online come worker `caldav-to-ics` (vedi `02-istanza-16bit.md`).
+- **Versione precedente**: il worker a utente singolo è nel tag `v0.1.0`; il worker `caldav-to-ics` è stato eliminato il 7 ottobre 2026.
 
 ## Dopo il primo rilascio (7 ottobre 2026)
 - **Anteprima** (richiesta di Mattia): pagina `/preview` con la settimana del calendario, completo o occupato. Legge proprio i feed pubblicati (quello che vede chi si abbona), espande ricorrenze ed eccezioni con ical.js e mostra gli orari nel fuso del browser (cookie `tz` impostato da `app.js`; finché manca, Europe/Rome per l'italiano e UTC per l'inglese, poi la pagina si ricarica). Nella vista completa ogni evento ha il colore del calendario da cui viene (mappa UID → calendario dalle copie in KV).
