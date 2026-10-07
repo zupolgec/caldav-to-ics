@@ -8,7 +8,8 @@
 - Risorse create dal primo deploy: D1 `calendario`, KV `calendario-feeds`, Queue `calendario-refresh`.
 - Email Sending abilitato su `condividi.link` (DKIM `cf-bounce`), mittente `accesso@condividi.link`.
 - `ENCRYPTION_KEY` in `.secrets/calendario.env`: non va mai cambiata, altrimenti i calendari salvati non si leggono più.
-- Account di Mattia: `mt@16bit.it`, con i tre calendari Google usati su Calendearing. I link sono in `.secrets/calendario-links.env`.
+- Account reale di Mattia: `mattia.trapani@gmail.com` (creato da lui, 4 calendari). `mt@16bit.it` è l'account usato per le verifiche dal vivo, con i tre calendari Google di Calendearing; i suoi link sono in `.secrets/calendario-links.env`.
+- Quando cambiano le regole dei feed (`FEED_FORMAT` in `src/refresh.ts`), ogni feed si ricostruisce al suo prossimo aggiornamento (entro 10 minuti). Per farlo subito su un account: `UPDATE feeds SET next_refresh_at = 0 WHERE user_id = …` e il cron successivo (ogni 5 minuti) lo mette in coda.
 
 Deploy:
 
