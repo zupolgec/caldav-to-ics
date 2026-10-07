@@ -28,6 +28,16 @@ const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 const app = new Hono<AppEnv>();
 
+// HTTPS only. Local development (localhost) keeps working over plain http.
+app.use(async (c, next) => {
+  const url = new URL(c.req.url);
+  if (url.protocol === "http:" && url.hostname !== "localhost" && url.hostname !== "127.0.0.1") {
+    url.protocol = "https:";
+    return c.redirect(url.href, c.req.method === "GET" || c.req.method === "HEAD" ? 301 : 308);
+  }
+  await next();
+});
+
 // Calendar feeds: plain text answers, no session, no HTML.
 app.on(["GET", "HEAD"], "/c/:file", async (c) => {
   const match = /^([A-Za-z0-9]{16,128})\.ics$/.exec(c.req.param("file"));

@@ -1,3 +1,4 @@
+import { createExecutionContext, waitOnExecutionContext } from "cloudflare:test";
 import { env as baseEnv } from "cloudflare:workers";
 import ICAL from "ical.js";
 import { http, HttpResponse } from "msw";
@@ -5,6 +6,9 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { NOW, SOURCE_A, SOURCE_B, multistatus, splitPerResource } from "./engine/fixtures";
 import { type TestEnv, call, loginLink, makeEnv, resetData, runCron, runQueue, signIn } from "./helpers";
 import { network } from "./network";
+import worker from "../src/index";
+
+const IncomingRequest = Request<unknown, IncomingRequestCfProperties>;
 
 const WORK_URL = "https://calendar.example.com/ical/work/private-0123456789abcdef0123/basic.ics";
 const HOME_URL = "https://ics.example.org/home.ics";
@@ -61,6 +65,21 @@ beforeEach(async () => {
 });
 
 afterEach(() => vi.useRealTimers());
+
+describe("https only", () => {
+  it("redirects plain http to https, feeds included", async () => {
+    const ctx = createExecutionContext();
+    for (const path of ["/", "/dashboard?x=1", "/c/abcdefghijklmnopqrstuvwx.ics"]) {
+      const response = await worker.fetch(new IncomingRequest(`http://cal.test${path}`), env, ctx);
+      expect(response.status, path).toBe(301);
+      expect(response.headers.get("Location"), path).toBe(`https://cal.test${path}`);
+    }
+    // Local development stays on http.
+    const local = await worker.fetch(new IncomingRequest("http://localhost:8787/healthz"), env, ctx);
+    expect(local.status).toBe(200);
+    await waitOnExecutionContext(ctx);
+  });
+});
 
 describe("landing page and language", () => {
   it("speaks Italian to Italian browsers and English to everyone else", async () => {
