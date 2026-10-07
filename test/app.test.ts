@@ -167,6 +167,13 @@ describe("passwordless sign-in", () => {
     expect(env.sentEmails).toHaveLength(5);
   });
 
+  it("tells browsers not to reuse old copies of private pages", async () => {
+    const cookie = await signIn(env, "me@example.com");
+    for (const path of ["/dashboard", "/preview", "/settings"]) {
+      expect((await call(env, path, { cookie })).headers.get("Cache-Control"), path).toBe("private, no-cache");
+    }
+  });
+
   it("keeps private pages behind sign-in and signs out", async () => {
     for (const path of ["/dashboard", "/settings"]) {
       const response = await call(env, path);

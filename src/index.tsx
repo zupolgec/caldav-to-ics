@@ -108,6 +108,8 @@ app.use(async (c, next) => {
   c.set("locale", isLocale(chosen) ? chosen : (user?.locale ?? negotiateLocale(c.req.header("Accept-Language"))));
   c.header("Vary", "Cookie, Accept-Language");
   await next();
+  // Pages of a signed-in user change with every refresh: browsers must check before reusing them.
+  if (user && !c.res.headers.has("Cache-Control")) c.res.headers.set("Cache-Control", "private, no-cache");
 });
 
 function pageContext(c: Ctx): PageContext {
